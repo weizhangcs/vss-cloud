@@ -1,4 +1,4 @@
-# 文件名: ai_service_mixin.py
+# ai_services/common/gemini/
 # 描述: 一个包含所有AI服务通用能力的Mixin类。
 
 import json

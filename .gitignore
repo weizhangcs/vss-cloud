@@ -1,0 +1,58 @@
+# Python
+# ---------------------------------
+# 字节码和缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境 (您使用的是 .venv)
+.venv/
+venv/
+ENV/
+
+# 包安装器
+pip-wheel.log
+pip-selfcheck.json
+pip-log.txt
+*.egg-info/
+.eggs/
+
+# 数据库
+*.sqlite3
+*.db
+
+# 国际化 (i18n)
+# 忽略编译后的 .mo 文件，但保留 .po 源文件
+*.mo
+
+# 日志
+logs/
+*.log
+
+# Docker
+# ---------------------------------
+# 忽略本地 Docker 卷数据
+# (我们使用命名卷 'shared_data', 但如果本地创建了 'shared_media'，也应忽略)
+shared_media/
+staticfiles/
+
+# 配置文件
+# ---------------------------------
+# 忽略包含密钥的环境文件
+.env
+.env.*
+!.env.example
+
+# IDE
+# ---------------------------------
+# PyCharm
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# 其他
+# ---------------------------------
+# macOS
+.DS_Store

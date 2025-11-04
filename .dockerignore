@@ -1,0 +1,36 @@
+# Git
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Python 虚拟环境
+.venv/
+venv/
+ENV/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+
+# 配置文件
+.env
+.env.*
+!.env.example
+
+# 本地数据和日志
+logs/
+*.log
+shared_media/
+staticfiles/
+
+# 文档
+README.md

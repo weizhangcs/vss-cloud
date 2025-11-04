@@ -1,4 +1,4 @@
-# task_manager/common/gemini/gemini_processor.py
+# ai_services/common/gemini/gemini_processor.py
 
 import json
 import re
@@ -29,21 +29,93 @@ class GeminiProcessor:
         exceptions.InternalServerError, exceptions.GatewayTimeout,
     )
 
-    def __init__(self, logger: logging.Logger, debug_dir: Union[str, Path] = "gemini_debug", caller_class: Optional[str] = None):
+    def __init__(self, api_key: str, logger: logging.Logger, debug_mode: bool = False, debug_dir: Union[str, Path] = "gemini_debug", caller_class: Optional[str] = None):
         """
-        初始化时，直接从 Django settings 获取 API 密钥。
+        初始化时，接收所有必要的配置作为参数，并创建客户端实例。
         """
-        self.api_key = settings.GOOGLE_API_KEY
+        if not api_key:
+            raise ValueError("API Key 不能为空。")
+
+        self.api_key = api_key
         self.logger = logger
-        self.debug_mode = settings.DEBUG  # 在开发模式下自动开启Debug
+        self.debug_mode = debug_mode
         self.debug_dir = Path(debug_dir)
-        self.caller_class = caller_class or "default"
+        self.log_dir = Path(debug_dir) if debug_dir else None
+        self.caller_class = caller_class or self._get_caller_class_name()
+        self.session_id = f"{self.caller_class}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-        if not self.api_key:
-            raise ValueError("GOOGLE_API_KEY 未在Django settings中配置。")
+        # --- [核心修正] 使用 genai.Client 实例化，而不是 genai.configure ---
+        # 我们不再使用Vertex AI的模式，所以逻辑可以简化
+        try:
+            self._client = genai.Client(api_key=self.api_key)
+            self.logger.info("GeminiProcessor initialized and genai.Client created successfully.")
+        except Exception as e:
+            self.logger.error(f"初始化 genai.Client 时失败: {e}", exc_info=True)
+            raise
 
-        genai.configure(api_key=self.api_key)
-        self.logger.info("GeminiProcessor initialized and configured via Django settings.")
+    # ======================================================================
+    #  现在，我们将把您原始代码中的所有核心方法都迁移过来，
+    #  并确保它们都使用 self._client 来进行API调用。
+    # ======================================================================
+
+    def generate_content(
+            self,
+            model_name: str,
+            prompt: Union[str, List],
+            stream: bool = False,
+            temperature: Optional[float] = None,
+            **generation_kwargs
+    ) -> tuple:
+        """ [已修正] 执行同步的AI内容生成。"""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+
+        config_params = {'temperature': temperature}
+        config = types.GenerateContentConfig(**config_params) if any(config_params.values()) else None
+
+        request_log = {
+            "model": model_name, "prompt": prompt, "kwargs": generation_kwargs,
+            "timestamp": timestamp, "caller": self.caller_class
+        }
+        self._log_to_file("requests", "request_", request_log)
+
+        start_time = datetime.now()
+        try:
+            # --- [核心修正] 使用 self._client 进行API调用 ---
+            # Before (Incorrect):
+            # api_call = lambda: self._client.models.get_model(model_name).generate_content(...)
+
+            # After (Correct):
+            api_call = lambda: self._client.models.generate_content(
+                model=model_name, contents=prompt, config=config
+            )
+            response = self._retry_api_call(api_call, "同步生成")
+
+            full_response_text = response.text
+            usage = {
+                "prompt_tokens": response.usage_metadata.prompt_token_count,
+                "completion_tokens": response.usage_metadata.candidates_token_count,
+                "total_tokens": response.usage_metadata.total_token_count
+            }
+
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            usage.update({
+                "start_time_utc": start_time.isoformat(),
+                "end_time_utc": end_time.isoformat(),
+                "duration_seconds": round(duration, 4),
+                "request_count": 1
+            })
+
+            self._log_to_file("raw_responses", "raw_", full_response_text)
+            parsed_data = self._parse_json_response(full_response_text)
+            self._log_to_file("parsed_responses", "parsed_", {
+                "data": parsed_data, "usage": usage, "timestamp": timestamp
+            })
+
+            return parsed_data, usage
+
+        except Exception as e:
+            self._log_and_raise(e, "生成内容")
 
     # ======================================================================
     #  您提供的 Gemini_processor.py 文件中的所有其他方法
@@ -114,82 +186,6 @@ class GeminiProcessor:
                     print(f"异步API调用在 {self._MAX_RETRIES} 次重试后彻底失败。")
                     self._log_and_raise(e, f"{context} (重试 {self._MAX_RETRIES} 次后)")
         raise last_exception
-
-    def generate_content(
-            self,
-            model_name: str,
-            prompt: Union[str, List],
-            stream: bool = False,
-            temperature: Optional[float] = None,
-            **generation_kwargs
-    ) -> tuple:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-
-        config_params = {
-            'temperature': temperature,
-            **{k: v for k, v in generation_kwargs.items()
-               if k in types.GenerateContentConfig.__annotations__}
-        }
-        config = types.GenerateContentConfig(**config_params) if any(config_params.values()) else None
-
-        log_kwargs = {k: dict(v) if isinstance(v, types.GenerateContentConfig) else v for k, v in
-                      generation_kwargs.items()}
-
-        request_log = {
-            "model": model_name, "prompt": prompt, "kwargs": log_kwargs,
-            "timestamp": timestamp, "caller": self.caller_class
-        }
-        self._log_to_file("requests", "request_", request_log)
-
-        start_time = datetime.now()
-        try:
-            if stream:
-                api_call = lambda: self._client.models.generate_content_stream(
-                    model=model_name, contents=prompt, config=config
-                )
-                response_iterator = self._retry_api_call(api_call, "同步流式生成")
-
-                full_response_text = "".join(chunk.text for chunk in response_iterator)
-                prompt_tokens = self.count_tokens(prompt, model_name)
-                completion_tokens = self.count_tokens(full_response_text, model_name)
-
-                usage = {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens
-                }
-            else:
-                api_call = lambda: self._client.models.generate_content(
-                    model=model_name, contents=prompt, config=config
-                )
-                response = self._retry_api_call(api_call, "同步生成")
-
-                full_response_text = response.text
-                usage = {
-                    "prompt_tokens": response.usage_metadata.prompt_token_count,
-                    "completion_tokens": response.usage_metadata.candidates_token_count,
-                    "total_tokens": response.usage_metadata.total_token_count
-                }
-
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-            usage.update({
-                "start_time_utc": start_time.isoformat(),
-                "end_time_utc": end_time.isoformat(),
-                "duration_seconds": round(duration, 4),
-                "request_count": 1
-            })
-
-            self._log_to_file("raw_responses", "raw_", full_response_text)
-            parsed_data = self._parse_json_response(full_response_text)
-            self._log_to_file("parsed_responses", "parsed_", {
-                "data": parsed_data, "usage": usage, "timestamp": timestamp
-            })
-
-            return parsed_data, usage
-
-        except Exception as e:
-            self._log_and_raise(e, "生成内容")
 
     async def generate_content_async(
             self,
@@ -265,7 +261,7 @@ class GeminiProcessor:
             del frame
 
     def _log_to_file(self, subdir: str, prefix: str, content: Any) -> Optional[Path]:
-        if not self.debug_mode:
+        if not self.debug_mode or not self.log_dir:
             return None
         log_dir = self.log_dir / subdir
         log_dir.mkdir(parents=True, exist_ok=True)

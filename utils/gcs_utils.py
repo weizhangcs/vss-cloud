@@ -1,4 +1,4 @@
-# task_manager/common/gcs_utils.py
+# utils/gcs_utils.py
 
 import datetime
 import logging

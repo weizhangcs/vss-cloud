@@ -1,0 +1,244 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-11-04 00:09+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+#: core/settings.py:50
+msgid "English"
+msgstr ""
+
+#: core/settings.py:51
+msgid "Simplified Chinese"
+msgstr ""
+
+#: core/settings.py:191
+msgid "Visify Story Studio (Cloud)"
+msgstr ""
+
+#: core/settings.py:196
+msgid "Account Management"
+msgstr ""
+
+#: core/settings.py:199 organization/models.py:24
+msgid "Organizations"
+msgstr ""
+
+#: core/settings.py:206 organization/models.py:65
+msgid "User Profiles"
+msgstr ""
+
+#: core/settings.py:211 organization/models.py:114
+msgid "Edge Instances"
+msgstr ""
+
+#: core/settings.py:217
+msgid "Task Management"
+msgstr ""
+
+#: core/settings.py:220 task_manager/models.py:65
+msgid "Tasks"
+msgstr ""
+
+#: core/settings.py:227
+msgid "Authentication"
+msgstr ""
+
+#: core/settings.py:230
+msgid "Users"
+msgstr ""
+
+#: core/settings.py:235
+msgid "Groups"
+msgstr ""
+
+#: organization/admin.py:30
+msgid "Profile"
+msgstr ""
+
+#: organization/admin.py:54 organization/models.py:19
+msgid "Organization Name"
+msgstr ""
+
+#: organization/admin.py:85 organization/models.py:99
+msgid "Instance Name"
+msgstr ""
+
+#: organization/admin.py:90 organization/models.py:104
+#: task_manager/models.py:57
+msgid "Status"
+msgstr ""
+
+#: organization/admin.py:138
+msgid "Username"
+msgstr ""
+
+#: organization/admin.py:142
+msgid "Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only."
+msgstr ""
+
+#: organization/admin.py:145
+msgid "Email address"
+msgstr ""
+
+#: organization/admin.py:148
+msgid "Optional."
+msgstr ""
+
+#: organization/admin.py:151
+msgid "Password"
+msgstr ""
+
+#: organization/admin.py:156
+msgid "Confirm Password"
+msgstr ""
+
+#: organization/admin.py:169
+msgid "Passwords do not match."
+msgstr ""
+
+#: organization/admin.py:175
+msgid "A user with this username already exists."
+msgstr ""
+
+#: organization/models.py:23 organization/models.py:50
+#: organization/models.py:85 task_manager/models.py:38
+msgid "Organization"
+msgstr ""
+
+#: organization/models.py:36
+msgid "Owner"
+msgstr ""
+
+#: organization/models.py:37
+msgid "Admin"
+msgstr ""
+
+#: organization/models.py:38
+msgid "Member"
+msgstr ""
+
+#: organization/models.py:44
+msgid "User"
+msgstr ""
+
+#: organization/models.py:60
+msgid "Role"
+msgstr ""
+
+#: organization/models.py:64
+msgid "User Profile"
+msgstr ""
+
+#: organization/models.py:78
+msgid "Online"
+msgstr ""
+
+#: organization/models.py:79
+msgid "Offline"
+msgstr ""
+
+#: organization/models.py:91
+msgid "Instance ID"
+msgstr ""
+
+#: organization/models.py:97
+msgid "API Key"
+msgstr ""
+
+#: organization/models.py:107
+msgid "Last Heartbeat"
+msgstr ""
+
+#: organization/models.py:113
+msgid "Edge Instance"
+msgstr ""
+
+#: task_manager/models.py:18
+msgid "Deploy RAG Corpus (Cloud)"
+msgstr ""
+
+#: task_manager/models.py:19
+msgid "Character Metrics (Cloud)"
+msgstr ""
+
+#: task_manager/models.py:20
+msgid "Character Identifier (Cloud)"
+msgstr ""
+
+#: task_manager/models.py:21
+msgid "Character Analysis Pipeline (Cloud)"
+msgstr ""
+
+#: task_manager/models.py:22
+msgid "Generate Narration (Cloud)"
+msgstr ""
+
+#: task_manager/models.py:23
+msgid "Generate Editing Script (Cloud)"
+msgstr ""
+
+#: task_manager/models.py:24
+msgid "Run Dubbing (Edge)"
+msgstr ""
+
+#: task_manager/models.py:25
+msgid "Run Synthesis (Edge)"
+msgstr ""
+
+#: task_manager/models.py:28
+msgid "Pending"
+msgstr ""
+
+#: task_manager/models.py:29
+msgid "Assigned"
+msgstr ""
+
+#: task_manager/models.py:30
+msgid "Running"
+msgstr ""
+
+#: task_manager/models.py:31
+msgid "Completed"
+msgstr ""
+
+#: task_manager/models.py:32
+msgid "Failed"
+msgstr ""
+
+#: task_manager/models.py:46
+msgid "Assigned Edge"
+msgstr ""
+
+#: task_manager/models.py:51
+msgid "Task Type"
+msgstr ""
+
+#: task_manager/models.py:59
+msgid "Payload"
+msgstr ""
+
+#: task_manager/models.py:60
+msgid "Result"
+msgstr ""
+
+#: task_manager/models.py:61
+msgid "Logs"
+msgstr ""
+
+#: task_manager/models.py:64
+msgid "Task"
+msgstr ""

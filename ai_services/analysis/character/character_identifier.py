@@ -1,6 +1,6 @@
-# 文件名: character_identifier_v2.py
+# 文件路径: ai_services/analysis/character/character_identifier.py
 # 描述: [重构后] 角色客观事实识别服务，已完全解耦，通过依赖注入模式运行。
-# 版本: 5.1 (Final Bugfix)
+# 版本: 5.1 (Final Reviewed)
 
 import json
 import logging
@@ -26,6 +26,7 @@ class CharacterIdentifier(AIServiceMixin):
     # SERVICE_NAME 用于在系统中唯一标识此服务，例如用于定位语言包或prompt文件。
     SERVICE_NAME = "character_identifier"
     # HAS_OWN_DATADIR 是一个元数据标志，用于指示服务是否需要一个独立的工作目录。
+    # (在此解耦版本中，此标志的实际作用已由外部调用方处理)
     HAS_OWN_DATADIR = True
 
     def __init__(self,
@@ -59,9 +60,9 @@ class CharacterIdentifier(AIServiceMixin):
         self.cost_calculator = cost_calculator
 
         # 路径依赖：接收已解析好的、具体的资源文件路径
-        self.prompts_dir = prompts_dir  # Prompt模板目录
+        self.prompts_dir = prompts_dir          # Prompt模板目录
         self.localization_path = localization_path  # 语言包文件路径
-        self.schema_path = schema_path  # 事实属性纲要文件路径
+        self.schema_path = schema_path          # 事实属性纲要文件路径
 
         # 内部状态：用于存储加载后的语言包内容
         self.labels = {}
@@ -125,8 +126,8 @@ class CharacterIdentifier(AIServiceMixin):
                     chunk_direct_ids = {sid for sid in chunk_of_ids if sid in direct_scenes.get(char_name, set())}
                     chunk_mentioned_ids = {sid for sid in chunk_of_ids if sid in mentioned_scenes.get(char_name, set())}
 
-                    # --- [CORE FIX] ---
-                    # Create a copy of kwargs and remove 'lang' to avoid the TypeError
+                    # 为了避免向 `_identify_facts_for_character` 方法重复传递 `lang` 参数，
+                    # 我们先从 kwargs 的副本中移除它，然后再解包。
                     other_params = kwargs.copy()
                     other_params.pop('lang', None)
 
@@ -161,7 +162,7 @@ class CharacterIdentifier(AIServiceMixin):
             }
             final_usage_report = {k: v for k, v in final_usage_report.items() if v is not None}
 
-            # 构建最终的完整结果。
+            # 构建最终的完整结果，其中不包含重复的用量报告。
             final_result = {
                 "generation_date": datetime.now().isoformat(),
                 "source_file": enhanced_script_path.name,
@@ -172,7 +173,7 @@ class CharacterIdentifier(AIServiceMixin):
             return {"status": "success", "data": {"result": final_result, "usage": final_usage_report}}
 
         except Exception as e:
-            # Log the original exception before re-raising it
+            # 捕获所有异常，记录严重错误日志，然后重新抛出，让上层调用者（如Celery Task）处理。
             self.logger.critical(f"执行人物事实识别时出错: {e}", exc_info=True)
             raise
 
@@ -247,7 +248,7 @@ class CharacterIdentifier(AIServiceMixin):
                 v.get('display_name', k): k for k, v in schema_data.items()
             }
 
-            # 从语言包获取默认类型
+            # 从语言包获取默认类型，以防AI返回一个schema中不存在的属性
             default_type = self.labels.get('dossier', {}).get('default_fact_type',
                                                               'ephemeral' if lang == 'en' else '情境性')
 

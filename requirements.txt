@@ -1,0 +1,42 @@
+# requirements.txt for visify-story-studio (Cloud)
+
+# Core
+# --------------------
+Django~=4.2.0
+gunicorn
+requests
+djangorestframework
+django-cors-headers
+psycopg2-binary  # PostgreSQL Adapter
+dj-database-url~=2.1
+
+# Admin Theme (Matching visify-ssw)
+# --------------------
+django-unfold==0.64.2
+django-crispy-forms
+crispy-tailwind
+
+# ORM Enhancements (Matching visify-ssw)
+# --------------------
+django-model-utils
+django-choices-field
+django-solo
+
+# Configuration
+# --------------------
+python-decouple
+python-dotenv
+
+# Asynchronous Tasks & State Machine (Matching visify-ssw)
+# --------------------
+celery
+redis
+django-fsm-2
+django-fsm-2-admin
+
+# --------------------
+# Google Cloud & AI Services (for RAG deployment)
+# --------------------
+google-cloud-storage
+google-cloud-aiplatform
+pydantic~=2.0
