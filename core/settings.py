@@ -308,12 +308,13 @@ GEMINI_PRICING = {
 # 这个路径必须与 docker-compose.yml 中挂载的【容器内路径】完全一致
 SHARED_ROOT = Path("/app/shared_media")
 
-# 为了代码清晰，我们为不同的文件类型创建子目录
-SHARED_RESOURCE_ROOT = SHARED_ROOT / "resources"
-SHARED_OUTPUT_ROOT = SHARED_ROOT / "outputs"
+# [保留] 用于所有 API 交互（上传、过程文件、输出）
 SHARED_TMP_ROOT = SHARED_ROOT / "tmp"
 
+# [新增] 仅用于内部AI服务调试日志
+SHARED_LOG_ROOT = SHARED_ROOT / "logs"
+
 # 在 Django 启动时，确保这些目录存在，这能避免很多潜在的 "File Not Found" 错误
-SHARED_RESOURCE_ROOT.mkdir(parents=True, exist_ok=True)
-SHARED_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+# 在 Django 启动时，确保这些目录存在
 SHARED_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+SHARED_LOG_ROOT.mkdir(parents=True, exist_ok=True)

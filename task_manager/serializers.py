@@ -128,14 +128,8 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(
-                    reverse('task_manager:task-download', kwargs={'task_id': obj.id})
+                    reverse('utils:task-download', kwargs={'task_id': obj.id})  # <-- [修改]
                 )
         return None
 
-class FileUploadSerializer(serializers.Serializer):
-    """
-    用于验证文件上传的简单 Serializer。
-    """
-    # 'file' 是 Edge 客户端在 multipart/form-data 中
-    # 必须提供的字段名称。
-    file = serializers.FileField(required=True, write_only=True)
+

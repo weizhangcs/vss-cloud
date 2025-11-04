@@ -25,6 +25,9 @@ __pycache__/
 .env
 .env.*
 !.env.example
+conf/gcp-credentials.json
+
+deploy.sh
 
 # 本地数据和日志
 logs/

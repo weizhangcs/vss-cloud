@@ -1,20 +1,24 @@
 # task_manager/views.py
-import uuid
 import os
 from pathlib import Path
+
 from django.http import FileResponse, Http404
-from django.db import transaction
-from django.conf import settings
-from django.core.files.storage import FileSystemStorage
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.generics import get_object_or_404 # 导入一个便捷的辅助函数
+from django.db import transaction
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
 from .authentication import EdgeInstanceAuthentication
 from .models import Task
-from .serializers import TaskFetchSerializer, TaskCreateSerializer, TaskCreateResponseSerializer, TaskDetailSerializer, FileUploadSerializer
+from .serializers import (
+    TaskFetchSerializer,
+    TaskCreateSerializer,
+    TaskCreateResponseSerializer,
+    TaskDetailSerializer
+)
+from rest_framework.generics import get_object_or_404
+from django.conf import settings
+import uuid
 
 
 class FetchAssignedTasksView(APIView):
@@ -67,11 +71,23 @@ class FetchAssignedTasksView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+# -----------------------------------------------------------------
+# [核心修改] 简化 TaskCreateView
+# -----------------------------------------------------------------
 class TaskCreateView(APIView):
+    """
+    [修改] 简化后的任务创建视图。
+    它不再关心文件来自 'resources' 还是 'outputs'。
+    它只验证客户端提供的相对路径是否存在于 SHARED_ROOT 中。
+    """
     authentication_classes = [EdgeInstanceAuthentication]
 
+    # [移除] parser_classes，回到默认的 JSONParser
+
     def post(self, request, *args, **kwargs):
+        # [修改] 我们回到使用 TaskCreateSerializer 来接收 JSON 数据
         create_serializer = TaskCreateSerializer(data=request.data)
+
         if not create_serializer.is_valid():
             return Response(create_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -79,56 +95,61 @@ class TaskCreateView(APIView):
         task_payload = validated_data.get('payload', {})
         task_type = validated_data['task_type']
 
-        # --- [核心升级] 使用一个更全面的IO配置映射表 ---
-        # 结构: { 任务类型: {"inputs": [输入键列表], "output_prefix": "输出文件前缀"} }
-        # "inputs": [] 表示该任务没有来自共享卷的输入文件。
-        tasks_io_config = {
-            Task.TaskType.CHARACTER_IDENTIFIER: {"inputs": ["input_file_path"], "output_prefix": "character_facts"},
-            Task.TaskType.CHARACTER_METRICS: {"inputs": ["input_file_path"], "output_prefix": "character_metrics"},
-            Task.TaskType.CHARACTER_PIPELINE: {"inputs": ["input_file_path"],
-                                               "output_prefix": "character_pipeline_results"},
-            Task.TaskType.DEPLOY_RAG_CORPUS: {"inputs": [], "output_prefix": "rag_deployment_report"},
-            # RAG部署从GCS读取，但会产生报告
-            Task.TaskType.GENERATE_NARRATION: {"inputs": [], "output_prefix": "narration_script"},
-            Task.TaskType.GENERATE_EDITING_SCRIPT: {
-                "inputs": ["dubbing_script_path", "blueprint_path"],
-                "output_prefix": "editing_script"
-            }
+        # 1. [新逻辑] 自动查找并验证所有输入路径
+        # ----------------------------------------
+
+        # --- [核心修正] ---
+        # 1. 创建一个临时字典来存储要添加的新键值对
+        absolute_paths_to_add = {}
+
+        # 2. 遍历 task_payload
+        for key, value in task_payload.items():
+            if key.endswith("_path"):
+                if not isinstance(value, str):
+                    return Response({"error": f"Path '{key}' must be a string."}, status=status.HTTP_400_BAD_REQUEST)
+
+                relative_path = value
+                absolute_input_path = settings.SHARED_ROOT / relative_path
+
+                if not absolute_input_path.is_file():
+                    return Response({"error": f"Input file not found at: {absolute_input_path}"},
+                                    status=status.HTTP_404_NOT_FOUND)
+
+                # 3. 将新键值对添加到 *临时* 字典中
+                absolute_paths_to_add[f'absolute_{key}'] = str(absolute_input_path)
+
+        # 4. 循环结束后，安全地更新 task_payload
+        task_payload.update(absolute_paths_to_add)
+        # --- [修正结束] ---
+        # ----------------------------------------
+
+        # 2. [不变] 定义所有任务的输出文件前缀
+        # ----------------------------------------
+        output_prefixes = {
+            Task.TaskType.CHARACTER_IDENTIFIER: "character_facts",
+            Task.TaskType.CHARACTER_METRICS: "character_metrics",
+            Task.TaskType.CHARACTER_PIPELINE: "character_pipeline_results",
+            Task.TaskType.DEPLOY_RAG_CORPUS: "rag_deployment_report",
+            Task.TaskType.GENERATE_NARRATION: "narration_script",
+            Task.TaskType.GENERATE_EDITING_SCRIPT: "editing_script"
         }
 
-        if task_type in tasks_io_config:
-            config = tasks_io_config[task_type]
-            input_keys = config.get("inputs", [])
-            output_prefix = config.get("output_prefix")
+        output_prefix = output_prefixes.get(task_type)
+        if output_prefix:
+            output_filename = f"{output_prefix}_{uuid.uuid4()}.json"
 
-            # 1. [统一逻辑] 验证并构建所有输入文件的绝对路径
-            if input_keys:
-                for key in input_keys:
-                    relative_path = task_payload.get(key)
-                    if not relative_path:
-                        return Response({"error": f"Payload for {task_type} must contain '{key}'"},
-                                        status=status.HTTP_400_BAD_REQUEST)
+            # [修改] 确保输出也写入 SHARED_TMP_ROOT
+            absolute_output_path = settings.SHARED_TMP_ROOT / output_filename
+            task_payload['absolute_output_path'] = str(absolute_output_path)
+        # ----------------------------------------
 
-                    absolute_input_path = settings.SHARED_RESOURCE_ROOT / relative_path
-
-                    if not absolute_input_path.is_file():
-                        return Response({"error": f"Input file not found at: {absolute_input_path}"},
-                                        status=status.HTTP_404_NOT_FOUND)
-
-                    task_payload[f'absolute_{key}'] = str(absolute_input_path)
-
-            # 2. [统一逻辑] 构建唯一的绝对输出路径
-            if output_prefix:
-                output_filename = f"{output_prefix}_{uuid.uuid4()}.json"
-                absolute_output_path = settings.SHARED_OUTPUT_ROOT / output_filename
-                task_payload['absolute_output_path'] = str(absolute_output_path)
-
-        # 使用更新后的 payload 创建任务
+        # 3. [修改] 使用更新后的 payload 创建任务
         task = create_serializer.save(
             organization=request.auth.organization,
-            payload=task_payload
+            payload=task_payload  # 传入已注入 'absolute_' 键的 payload
         )
 
+        # 4. [不变] 返回受理回执
         response_serializer = TaskCreateResponseSerializer(task)
         return Response(response_serializer.data, status=status.HTTP_202_ACCEPTED)
 
@@ -210,42 +231,3 @@ class TaskResultDownloadView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-class FileUploadView(APIView):
-    """
-    一个专用的端点，用于将文件上传到共享资源目录。
-    """
-    authentication_classes = [EdgeInstanceAuthentication]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request, *args, **kwargs):
-        serializer = FileUploadSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        # 1. 获取上传的文件对象
-        uploaded_file = serializer.validated_data['file']
-
-        # 2. 定义存储位置 (使用 settings.py 中的 SHARED_RESOURCE_ROOT)
-        # 我们将文件保存到“资源”目录中，供 Celery 任务读取
-        fs = FileSystemStorage(location=settings.SHARED_RESOURCE_ROOT)
-
-        # 3. 创建一个唯一的、安全的文件名
-        # (我们使用 UUID + 原始文件名来防止冲突和路径遍历)
-        unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
-
-        try:
-            # 4. 保存文件到共享卷
-            saved_name = fs.save(unique_filename, uploaded_file)
-
-            # 5. 返回 *相对* 路径，供 TaskCreateView 使用
-            # (saved_name 已经是相对 SHARED_RESOURCE_ROOT 的路径)
-            return Response(
-                {"relative_path": saved_name},
-                status=status.HTTP_201_CREATED
-            )
-        except Exception as e:
-            return Response(
-                {"error": f"Could not save file: {e}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )

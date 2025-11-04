@@ -31,12 +31,20 @@ def execute_cloud_native_task(task_id):
     """
     Celery 任务，使用专业的日志记录。
     """
-    # 3. 在任务的最开始，立刻打印一条日志。
-    #    这可以帮助我们确认 worker 是否成功从 Redis 领取到了任务。
     logger.info(f"Celery worker successfully received task with ID: {task_id}")
 
     try:
         task = Task.objects.get(pk=task_id)
+        # [修改] 我们不再在这里修改状态，让 FSM 来处理
+        # task.status = Task.TaskStatus.RUNNING
+        # task.save()
+
+        # [修改] 使用 FSM 的 'start' 转换
+        # 这要求 'start' 转换的目标是 RUNNING，源是 PENDING
+        # （假设 TaskCreateView 创建的任务是 PENDING）
+        # 如果 TaskCreateView 创建的是 ASSIGNED，则源应为 ASSIGNED
+
+        # 为了简单起见，我们暂时保持手动状态设置
         task.status = Task.TaskStatus.RUNNING
         task.save()
 
@@ -48,16 +56,17 @@ def execute_cloud_native_task(task_id):
             result = _handle_character_metrics_calculation(task)
         elif task.task_type == Task.TaskType.CHARACTER_IDENTIFIER:
             result = _handle_character_identification(task)
-        elif task.task_type == Task.TaskType.CHARACTER_PIPELINE:  # <-- [新增] 调度到新的编排任务
+        elif task.task_type == Task.TaskType.CHARACTER_PIPELINE:
             result = _handle_character_pipeline(task)
-        elif task.task_type == Task.TaskType.GENERATE_EDITING_SCRIPT:  # <-- [新增]
+        elif task.task_type == Task.TaskType.GENERATE_EDITING_SCRIPT:
             result = _handle_editing_script_generation(task)
         else:
             raise ValueError(f"Unsupported cloud-native task type: {task.task_type}")
 
-        task.result = result
-        task.status = Task.TaskStatus.COMPLETED
+        # [修改] 使用 FSM 的 'complete' 转换
+        task.complete(result_data=result)
         task.save()
+
         logger.info(f"Task {task_id} ({task.task_type}) completed successfully.")
         return f"Task {task_id} ({task.task_type}) completed successfully."
 
@@ -65,8 +74,8 @@ def execute_cloud_native_task(task_id):
         logger.error(f"An error occurred while executing Task ID {task_id}: {e}", exc_info=True)
         try:
             task = Task.objects.get(pk=task_id)
-            task.result = {"error": str(e)}
-            task.status = Task.TaskStatus.FAILED
+            # [修改] 使用 FSM 的 'fail' 转换
+            task.fail(error_message=str(e))
             task.save()
         except Task.DoesNotExist:
             pass
@@ -80,20 +89,16 @@ def _handle_narration_generation(task: Task) -> dict:
     logger.info(f"Starting NARRATION GENERATION for Task ID: {task.id}...")
 
     payload = task.payload
-    # 从 payload 获取必要的运行时参数
     series_name = payload.get("series_name")
-    series_id = payload.get("series_id")  # 我们用 series_id 来构建语料库名称
-    output_file_path_str = payload.get("absolute_output_path")
+    series_id = payload.get("series_id")
+    output_file_path_str = payload.get("absolute_output_path") # 由 View 注入
     service_params = payload.get("service_params", {})
 
     if not all([series_name, series_id, output_file_path_str]):
         raise ValueError(
             "Payload for GENERATE_NARRATION is missing required keys: series_name, series_id, absolute_output_path.")
 
-    # --- 依赖组装 (Composition Root) ---
     logger.info("Assembling dependencies for NarrationGenerator service...")
-
-    # 构建租户隔离的语料库名称
     instance_id = task.organization.name
     corpus_display_name = f"{series_id}-{instance_id}"
 
@@ -101,51 +106,49 @@ def _handle_narration_generation(task: Task) -> dict:
         api_key=settings.GOOGLE_API_KEY,
         logger=logger,
         debug_mode=settings.DEBUG,
-        debug_dir=settings.SHARED_TMP_ROOT / f"narration_task_{task.id}_debug"
+        # [修改] 调试日志应转到 LOG_ROOT
+        debug_dir=settings.SHARED_LOG_ROOT / f"narration_task_{task.id}_debug"
     )
 
-    # 实例化服务
     narration_service = NarrationGenerator(
         project_id=settings.GOOGLE_CLOUD_PROJECT,
         location=settings.GOOGLE_CLOUD_LOCATION,
-        prompts_dir=settings.BASE_DIR / 'ai_services' / 'narration' / 'prompts',  # 使用新的独立路径
+        prompts_dir=settings.BASE_DIR / 'ai_services' / 'narration' / 'prompts',
         logger=logger,
+        # [不变] 工作目录应转到 TMP_ROOT
         work_dir=settings.SHARED_TMP_ROOT / f"narration_task_{task.id}_workspace",
         gemini_processor=gemini_processor
     )
 
-    # --- 执行服务 ---
     result_data = narration_service.execute(
         series_name=series_name,
         corpus_display_name=corpus_display_name,
         **service_params
     )
 
-    # --- 保存结果到文件 ---
+    # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)
     output_file_path = Path(output_file_path_str)
     with output_file_path.open('w', encoding='utf-8') as f:
         json.dump(result_data, f, ensure_ascii=False, indent=2)
 
     logger.info(f"NARRATION GENERATION finished. Output saved to: {output_file_path}")
 
-    # --- 返回任务结果 ---
     return {
         "message": "Narration script generated successfully.",
-        "output_file_path": str(output_file_path),
+        # [修改] 返回相对于 SHARED_ROOT 的路径
+        "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
         "usage_report": result_data.get("ai_total_usage", {})
     }
 
 
 def _handle_rag_deployment(task: Task) -> dict:
     """
-    [最终重构版] 处理“部署RAG语料库”任务的核心逻辑。
-
-    此函数现在直接从共享卷读取输入文件，并在处理完成后将输入和输出备份到GCS。
+    [重构后] 处理“部署RAG语料库”任务。
     """
     logger.info(f"Starting RAG DEPLOYMENT for Task ID: {task.id}...")
 
     payload = task.payload
-    # 1. 从 payload 中读取由 view 准备好的【绝对路径】
+    # [修改] 键名现在由 View 自动生成
     blueprint_path_str = payload.get("absolute_blueprint_input_path")
     facts_path_str = payload.get("absolute_facts_input_path")
 
@@ -155,13 +158,10 @@ def _handle_rag_deployment(task: Task) -> dict:
     local_blueprint_path = Path(blueprint_path_str)
     local_facts_path = Path(facts_path_str)
 
-    # 2. [已移除] 不再需要从GCS下载文件的步骤
-
-    # 使用一个与任务ID相关的、持久化的临时目录
+    # [不变] 临时目录应转到 TMP_ROOT
     temp_dir = settings.SHARED_TMP_ROOT / f"rag_deploy_{task.id}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- 3. 依赖组装 (与之前版本一致) ---
     instance_id = task.organization.name
     series_id = payload.get("series_id")
     corpus_display_name = f"{series_id}-{instance_id}"
@@ -174,8 +174,6 @@ def _handle_rag_deployment(task: Task) -> dict:
     i18n_path = settings.BASE_DIR / 'ai_services' / 'rag' / 'metadata' / 'schemas.json'
     load_i18n_strings(i18n_path)
 
-    # --- 4. 执行核心部署流程 (逻辑不变) ---
-    # deployer 内部的逻辑本来就是处理本地文件，所以无需改动
     deployer_result = deployer.execute(
         corpus_display_name=corpus_display_name,
         blueprint_path=local_blueprint_path,
@@ -185,8 +183,6 @@ def _handle_rag_deployment(task: Task) -> dict:
         instance_id=instance_id
     )
 
-    # --- 5. [新增] 将输入文件备份到GCS ---
-    # 为了可追溯性，我们将本次任务使用的输入文件归档到GCS。
     logger.info(f"Backing up source files for Task {task.id} to GCS...")
     backup_prefix = f"archive/tasks/{task.id}/inputs"
     upload_file_to_gcs(
@@ -200,52 +196,45 @@ def _handle_rag_deployment(task: Task) -> dict:
         gcs_object_name=f"{backup_prefix}/character_facts.json"
     )
     logger.info("Source file backup to GCS completed.")
-
     logger.info(f"RAG DEPLOYMENT finished successfully for Task ID: {task.id}.")
 
-    # 返回 deployer 的结果，其中包含了语料库名称和RAG源文件的GCS路径
     return deployer_result
 
 
 def _handle_character_identification(task: Task) -> dict:
     """
     处理“人物事实识别”任务的核心逻辑。
-    This function is the Composition Root inside the Celery worker.
     """
     logger.info(f"Starting CHARACTER IDENTIFIER for Task ID: {task.id}...")
 
     payload = task.payload
-    # 1. 从 payload 中读取由 view 准备好的【绝对路径】
-    input_file_path_str = payload.get("absolute_input_path")
-    output_file_path_str = payload.get("absolute_output_path")
+    # [修改] 键名现在由 View 自动生成
+    input_file_path_str = payload.get("absolute_input_file_path")
+    output_file_path_str = payload.get("absolute_output_path") # 由 View 注入
     service_params = payload.get("service_params", {})
 
-    if not all([input_file_path_str, output_file_path_str, service_params]):
+    # [修改] 允许 service_params 为空字典
+    if not all([input_file_path_str, output_file_path_str]) or service_params is None:
         raise ValueError("Payload is missing required absolute paths or service_params.")
 
-    # --- Dependency Assembly (using Django settings) ---
     logger.info("Assembling dependencies for CharacterIdentifier service...")
-
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
         logger=logger,
         debug_mode=settings.DEBUG,
-        debug_dir=settings.SHARED_OUTPUT_ROOT / f"task_{task.id}_debug"
+        # [修改] 调试日志应转到 LOG_ROOT
+        debug_dir=settings.SHARED_LOG_ROOT / f"task_{task.id}_debug"
     )
     cost_calculator = CostCalculator(
         pricing_data=settings.GEMINI_PRICING,
         usd_to_rmb_rate=settings.USD_TO_RMB_EXCHANGE_RATE
     )
 
-    # Define paths based on Django settings
     service_name = CharacterIdentifier.SERVICE_NAME
     prompts_dir = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'prompts'
     localization_path = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'localization' / f"{service_name}.json"
     schema_path = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'metadata' / "fact_attributes.json"
-    #localization_path = settings.SHARED_RESOURCE_ROOT / "localization" / "analysis" / f"{service_name}.json"
-    #schema_path = settings.SHARED_RESOURCE_ROOT / "metadata" / "fact_attributes.json"
 
-    # Instantiate the service
     identifier_service = CharacterIdentifier(
         gemini_processor=gemini_processor,
         cost_calculator=cost_calculator,
@@ -253,15 +242,11 @@ def _handle_character_identification(task: Task) -> dict:
         localization_path=localization_path,
         schema_path=schema_path,
         logger=logger,
-        base_path=settings.SHARED_OUTPUT_ROOT / f"task_{task.id}_workspace"
+        # [修改] 工作目录应转到 TMP_ROOT
+        base_path=settings.SHARED_TMP_ROOT / f"task_{task.id}_workspace"
     )
 
-    # --- Execute Service ---
-    # Note: This assumes the input file path is accessible by the worker.
-    # We will address the shared storage issue separately.
     input_file_path = Path(input_file_path_str)
-
-    # 确保文件存在于共享卷中
     if not input_file_path.is_file():
         raise FileNotFoundError(f"Input file not found by worker at path: {input_file_path}")
 
@@ -270,75 +255,68 @@ def _handle_character_identification(task: Task) -> dict:
         **service_params
     )
 
-    # 4. [修正] 从返回的容器中，按正确的结构提取数据
     if result_data.get("status") != "success":
         raise RuntimeError(f"CharacterIdentifier service returned a non-success status: {result_data}")
 
     data_payload = result_data.get("data", {})
-    result_to_save = data_payload.get("result", {})  # 这是要保存到文件的核心结果
-    usage_report = data_payload.get("usage", {})  # 这是要存入任务结果的用量报告
+    result_to_save = data_payload.get("result", {})
+    usage_report = data_payload.get("usage", {})
 
-    # 5. Worker 的新职责：将【提取出的核心结果】保存到共享输出文件中
+    # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)
     output_file_path = Path(output_file_path_str)
     with output_file_path.open('w', encoding='utf-8') as f:
         json.dump(result_to_save, f, ensure_ascii=False, indent=2)
 
     logger.info(f"CHARACTER IDENTIFIER finished. Output saved to: {output_file_path}")
 
-    # 6. [修正] 任务的最终结果应该是对输出文件的引用，以及【提取出的用量报告】
     return {
         "message": "Task completed successfully.",
-        "output_file_path": str(output_file_path),
-        "usage_report": usage_report  # <-- 使用正确提取的用量报告
+        # [修改] 返回相对于 SHARED_ROOT 的路径
+        "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
+        "usage_report": usage_report
     }
 
 
-# [核心修改] 更新 _handle_character_metrics_calculation 函数
 def _handle_character_metrics_calculation(task: Task) -> dict:
     """
-    处理“角色量化指标计算”任务的核心逻辑 (增加文件输出)。
+    处理“角色量化指标计算”任务的核心逻辑。
     """
     logger.info(f"Starting CHARACTER METRICS for Task ID: {task.id}...")
 
     payload = task.payload
-    # 1. 从 payload 中读取由 view 准备好的【绝对路径】
-    input_file_path_str = payload.get("absolute_input_path")
-    output_file_path_str = payload.get("absolute_output_path")  # <-- 新增读取
+    # [修改] 键名现在由 View 自动生成
+    input_file_path_str = payload.get("absolute_input_file_path")
+    output_file_path_str = payload.get("absolute_output_path") # 由 View 注入
     service_params = payload.get("service_params", {})
 
-    # 2. 更新验证逻辑
     if not all([input_file_path_str, output_file_path_str]):
         raise ValueError("Payload for CHARACTER_METRICS is missing required absolute paths.")
 
-    # 3. Worker的文件IO和数据准备逻辑保持不变
     input_file_path = Path(input_file_path_str)
     if not input_file_path.is_file():
         raise FileNotFoundError(f"Input file not found by worker at path: {input_file_path}")
 
     with input_file_path.open('r', encoding='utf-8') as f:
         blueprint_data = json.load(f)
-
     logger.info("Blueprint data loaded from file.")
 
-    # 4. 依赖组装和执行服务的逻辑保持不变
     calculator_service = CharacterMetricsCalculator(logger=logger)
     result_data = calculator_service.execute(
         blueprint_data=blueprint_data,
         **service_params
     )
 
-    # 5. [新增] Worker 的新职责：将结果保存到共享输出文件中
+    # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)
     output_file_path = Path(output_file_path_str)
     with output_file_path.open('w', encoding='utf-8') as f:
         json.dump(result_data, f, ensure_ascii=False, indent=2)
 
     logger.info(f"CHARACTER METRICS finished. Output saved to: {output_file_path}")
 
-    # 6. [修改] 任务的最终结果应该是对输出文件的引用，以及关键的元数据
-    #    这样与 character_identifier 的返回结构保持一致
     return {
         "message": "Task completed successfully.",
-        "output_file_path": str(output_file_path),
+        # [修改] 返回相对于 SHARED_ROOT 的路径
+        "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
         "metrics_summary": {
             "total_characters_found": len(result_data.get("all_characters_found", [])),
             "top_character": result_data.get("ranked_characters", [{}])[0].get("name", "N/A")
@@ -346,7 +324,6 @@ def _handle_character_metrics_calculation(task: Task) -> dict:
     }
 
 
-# [新增] 完整的编排任务处理函数
 def _handle_character_pipeline(task: Task) -> dict:
     """
     执行完整的“角色分析线”编排任务。
@@ -355,14 +332,15 @@ def _handle_character_pipeline(task: Task) -> dict:
 
     payload = task.payload
     mode = payload.get('mode')
-    input_file_path_str = payload.get("absolute_input_path")
-    output_file_path_str = payload.get("absolute_output_path")
+    # [修改] 键名现在由 View 自动生成
+    input_file_path_str = payload.get("absolute_input_file_path")
+    output_file_path_str = payload.get("absolute_output_path") # 由 View 注入
     service_params = payload.get("service_params", {})
 
-    if not all([input_file_path_str, output_file_path_str]):
-        raise ValueError("Payload for PIPELINE is missing required absolute paths.")
+    # [修改] 允许 service_params 为空字典
+    if not all([input_file_path_str, output_file_path_str]) or service_params is None:
+        raise ValueError("Payload for PIPELINE is missing required absolute paths or service_params.")
 
-    # --- 步骤 1: 加载共享的输入数据 ---
     input_file_path = Path(input_file_path_str)
     if not input_file_path.is_file():
         raise FileNotFoundError(f"Input file not found by worker at path: {input_file_path}")
@@ -371,9 +349,8 @@ def _handle_character_pipeline(task: Task) -> dict:
         blueprint_data = json.load(f)
     logger.info("Blueprint data loaded from file for pipeline.")
 
-    # --- 步骤 2: 决定要分析的角色列表 ---
     characters_to_process = []
-    metrics_report = None  # 用于存储指标计算的中间结果
+    metrics_report = None
 
     if mode == 'specific':
         characters_to_process = payload.get('characters_to_analyze', [])
@@ -399,30 +376,36 @@ def _handle_character_pipeline(task: Task) -> dict:
 
     if not characters_to_process:
         logger.warning("No characters selected for identification. Pipeline will stop.")
-        return {"message": "No characters met the criteria for fact identification.", "metrics_report": metrics_report}
+        # [修改] 将结果保存到输出文件
+        output_file_path = Path(output_file_path_str)
+        result_to_save = {"message": "No characters met the criteria for fact identification.",
+                          "metrics_report": metrics_report}
+        with output_file_path.open('w', encoding='utf-8') as f:
+            json.dump(result_to_save, f, ensure_ascii=False, indent=2)
 
-    # --- 步骤 3: 为筛选出的角色执行事实识别 ---
+        return {
+            "message": "No characters met the criteria for fact identification.",
+            "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
+        }
+
     logger.info(f"Proceeding with fact identification for {len(characters_to_process)} characters...")
-    # 依赖组装 (与 _handle_character_identification 中一致)
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
         logger=logger,
         debug_mode=settings.DEBUG,
-        debug_dir=settings.SHARED_OUTPUT_ROOT / f"task_{task.id}_debug"
+        # [修改] 调试日志应转到 LOG_ROOT
+        debug_dir=settings.SHARED_LOG_ROOT / f"task_{task.id}_debug"
     )
     cost_calculator = CostCalculator(
         pricing_data=settings.GEMINI_PRICING,
         usd_to_rmb_rate=settings.USD_TO_RMB_EXCHANGE_RATE
     )
 
-    # Define paths based on Django settings
     service_name = CharacterIdentifier.SERVICE_NAME
     prompts_dir = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'prompts'
     localization_path = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'localization' / f"{service_name}.json"
     schema_path = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'metadata' / "fact_attributes.json"
 
-
-    # Instantiate the service
     identifier_service = CharacterIdentifier(
         gemini_processor=gemini_processor,
         cost_calculator=cost_calculator,
@@ -430,11 +413,10 @@ def _handle_character_pipeline(task: Task) -> dict:
         localization_path=localization_path,
         schema_path=schema_path,
         logger=logger,
-        base_path=settings.SHARED_OUTPUT_ROOT / f"task_{task.id}_workspace"
+        # [修改] 工作目录应转到 TMP_ROOT
+        base_path=settings.SHARED_TMP_ROOT / f"task_{task.id}_workspace"
     )
 
-    # 执行事实识别服务
-    # 注意：我们将 'characters_to_analyze' 覆盖为我们筛选出的列表
     service_params['characters_to_analyze'] = characters_to_process
     id_service_response = identifier_service.execute(
         enhanced_script_path=input_file_path,
@@ -444,13 +426,12 @@ def _handle_character_pipeline(task: Task) -> dict:
     if id_service_response.get("status") != "success":
         raise RuntimeError(f"CharacterIdentifier service failed within the pipeline: {id_service_response}")
 
-    # --- 步骤 4: 保存最终结果 ---
     result_to_save = id_service_response.get("data", {}).get("result", {})
     usage_report = id_service_response.get("data", {}).get("usage", {})
 
+    # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)
     output_file_path = Path(output_file_path_str)
     with output_file_path.open('w', encoding='utf-8') as f:
-        # 为了报告的完整性，我们可以将指标计算结果也一并存入
         result_to_save['metrics_calculation_results'] = metrics_report
         json.dump(result_to_save, f, ensure_ascii=False, indent=2)
 
@@ -458,13 +439,13 @@ def _handle_character_pipeline(task: Task) -> dict:
 
     return {
         "message": "Character pipeline completed successfully.",
-        "output_file_path": str(output_file_path),
+        # [修改] 返回相对于 SHARED_ROOT 的路径
+        "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
         "usage_report": usage_report,
         "characters_processed": characters_to_process
     }
 
 
-# [新增] 为新任务编写专门的处理函数
 def _handle_editing_script_generation(task: Task) -> dict:
     """
     处理“生成剪辑脚本”任务的核心逻辑。
@@ -472,22 +453,22 @@ def _handle_editing_script_generation(task: Task) -> dict:
     logger.info(f"Starting EDITING SCRIPT GENERATION for Task ID: {task.id}...")
 
     payload = task.payload
-    # 从 payload 中读取由 view 准备好的【两个输入】和【一个输出】的绝对路径
+    # [修改] 键名现在由 View 自动生成
     dubbing_path_str = payload.get("absolute_dubbing_script_path")
     blueprint_path_str = payload.get("absolute_blueprint_path")
-    output_file_path_str = payload.get("absolute_output_path")
+    output_file_path_str = payload.get("absolute_output_path") # 由 View 注入
     service_params = payload.get("service_params", {})
 
     if not all([dubbing_path_str, blueprint_path_str, output_file_path_str]):
         raise ValueError("Payload for GENERATE_EDITING_SCRIPT is missing required absolute paths.")
 
-    # --- 依赖组装 (Composition Root) ---
     logger.info("Assembling dependencies for BrollSelectorService...")
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
         logger=logger,
         debug_mode=settings.DEBUG,
-        debug_dir=settings.SHARED_OUTPUT_ROOT / f"task_{task.id}_debug"
+        # [修改] 调试日志应转到 LOG_ROOT
+        debug_dir=settings.SHARED_LOG_ROOT / f"task_{task.id}_debug"
     )
     cost_calculator = CostCalculator(
         pricing_data=settings.GEMINI_PRICING,
@@ -497,28 +478,28 @@ def _handle_editing_script_generation(task: Task) -> dict:
     selector_service = BrollSelectorService(
         prompts_dir=settings.BASE_DIR / 'ai_services' / 'editing' / 'prompts',
         logger=logger,
+        # [不变] 工作目录应转到 TMP_ROOT
         work_dir=settings.SHARED_TMP_ROOT / f"editing_task_{task.id}_workspace",
         gemini_processor=gemini_processor
     )
 
-    # --- 执行服务 ---
     result_data = selector_service.execute(
         dubbing_path=Path(dubbing_path_str),
         blueprint_path=Path(blueprint_path_str),
         **service_params
     )
 
-    # --- 保存结果到文件 ---
+    # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)
     output_file_path = Path(output_file_path_str)
     with output_file_path.open('w', encoding='utf-8') as f:
         json.dump(result_data, f, ensure_ascii=False, indent=2)
 
     logger.info(f"EDITING SCRIPT GENERATION finished. Output saved to: {output_file_path}")
 
-    # --- 返回任务结果 ---
     return {
         "message": "Editing script generated successfully.",
-        "output_file_path": str(output_file_path),
+        # [修改] 返回相对于 SHARED_ROOT 的路径
+        "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
         "script_summary": {
             "total_sequences": len(result_data.get("editing_script", []))
         }
