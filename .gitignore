@@ -42,6 +42,7 @@ staticfiles/
 .env
 .env.*
 !.env.example
+conf/gcp-credentials.json
 
 # IDE
 # ---------------------------------
