@@ -1,0 +1,38 @@
+{
+  "zh": {
+    "dossier": {
+      "dossier_direct_header": "直接出场场景",
+      "dossier_mentioned_header": "间接被提及场景",
+      "dossier_scene_header": "--- 场景ID: {scene_id} ---",
+      "dossier_dynamics_label": "情节动态:",
+      "dossier_dialogue_header": "相关对话:",
+      "dossier_caption_header": "相关提词:",
+      "dossier_dialogue_line": "  - {speaker}: {content}",
+      "no_info": "该角色没有相关的直接出场或被提及的场景。",
+      "default_fact_type": "情境性"
+    },
+    "attribute_labels": {
+      "description": "描述",
+      "keywords": "关键词",
+      "type": "属性类型"
+    }
+  },
+  "en": {
+    "dossier": {
+      "dossier_direct_header": "Direct Appearance Scenes",
+      "dossier_mentioned_header": "Indirectly Mentioned Scenes",
+      "dossier_scene_header": "--- Scene ID: {scene_id} ---",
+      "dossier_dynamics_label": "Plot Dynamics:",
+      "dossier_dialogue_header": "Relevant Dialogue:",
+      "dossier_caption_header": "Relevant Captions:",
+      "dossier_dialogue_line": "  - {speaker}: {content}",
+      "no_info": "No relevant scenes found where this character appeared or was mentioned.",
+      "default_fact_type": "ephemeral"
+    },
+    "attribute_labels": {
+      "description": "Description",
+      "keywords": "Keywords",
+      "type": "Type"
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "zh": {
+    "avatar": {
+      "display_name": "扮演身份",
+      "description": "角色在特定时间段内，有意或无意地扮演或呈现出的另一个身份，用于与世界互动。",
+      "keywords": ["扮演", "假装", "伪装成", "冒充", "身份是", "假扮"],
+      "type": "状态性"
+    },
+    "occupation": {
+      "display_name": "职业",
+      "description": "角色的真实职业、具体职位或官方头衔，通常通过劳动换取报酬。",
+      "keywords": ["总裁", "CEO", "助理", "医生", "律师", "警察", "司机", "老师", "学生", "间谍", "杀手", "董事长"],
+      "type": "状态性"
+    },
+    "family_status": {
+      "display_name": "家庭状态",
+      "description": "描述客观的、可被证实的家庭成员构成（如：有弟弟、是双胞胎）或法律/社会认可的婚姻状态（如：已婚、订婚、离婚）。此类别不包含角色对家庭的主观看法、感受或经历。",
+      "keywords": ["丈夫", "妻子", "夫妻", "结婚", "离婚", "订婚", "姐妹", "兄弟", "双胞胎", "母亲", "父亲", "儿子", "女儿", "家庭", "家人", "孩子"],
+      "type": "状态性"
+    },
+    "physical_health": {
+      "display_name": "健康状态",
+      "description": "角色的身体健康状况，包括伤病、特殊生理状态或残疾。",
+      "keywords": ["受伤", "中枪", "生病", "怀孕", "昏迷", "死亡", "失明", "残疾", "伤口", "病症", "中毒"],
+      "type": "状态性"
+    },
+    "mental_status": {
+      "display_name": "心理状态",
+      "description": "角色的精神、心理状态或在特定场景下的核心情绪。这是一个高频变化的、情境性的属性。",
+      "keywords": ["悲伤", "高兴", "愤怒", "焦虑", "困惑", "决心", "失忆", "抑郁", "崩溃", "冷静", "疯狂", "紧张", "思念"],
+      "type": "情境性"
+    },
+    "key_skill": {
+      "display_name": "技能",
+      "description": "角色掌握的、能对情节发展产生显著影响的特定能力、知识或才华。",
+      "keywords": ["黑客", "神枪手", "精通", "密码", "策略", "格斗", "开锁", "伪造", "读心术", "催眠", "演技"],
+      "type": "状态性"
+    },
+    "intrinsic_trait": {
+      "display_name": "性格特征",
+      "description": "描述角色内在的、相对稳定的、核心的性格特质。通常在整个故事中保持一致，除非发生“重生/穿越”等重大事件。",
+      "keywords": ["狡猾", "忠诚", "勇敢", "懦弱", "天真", "善良", "无情", "自私", "乐观", "悲观", "固执", "多疑", "果断"],
+      "type": "恒定"
+    },
+    "gender": {
+      "display_name": "性别",
+      "description": "角色的生理或社会性别。在绝大多数故事中，这是一个恒定属性。",
+      "keywords": ["男", "女", "先生", "女士", "小姐", "他", "她", "男孩", "女孩"],
+      "type": "恒定"
+    },
+    "social_status": {
+      "display_name": "社会属性",
+      "description": "角色在社会中的公共形象、声望或由人际关系定义的非职业身份。",
+      "keywords": ["继承人", "逃犯", "名人", "名媛", "被排挤者", "总裁夫人", "英雄", "首富", "破产", "流浪汉"],
+      "type": "状态性"
+    }
+  },
+  "en": {
+    "avatar": {
+      "description": "An alternative identity that the character intentionally or unintentionally plays or presents to interact with the world.",
+      "keywords": ["posing as", "pretending to be", "disguised as", "impersonating", "under the identity of", "acting as"],
+      "type": "stateful"
+    },
+    "occupation": {
+      "description": "The character's real profession, specific job position, or official title, usually in exchange for remuneration.",
+      "keywords": ["CEO", "President", "assistant", "doctor", "lawyer", "police", "driver", "teacher", "student", "spy", "assassin", "chairman"],
+      "type": "stateful"
+    },
+    "family_status": {
+      "description": "Describes the objective, verifiable family member composition (e.g., has a younger brother, is a twin) or the legally/socially recognized marital status (e.g., married, engaged, divorced). This category does not include the character's subjective opinions, feelings, or experiences regarding family.",
+      "keywords": ["husband", "wife", "married", "divorced", "engaged", "sister", "brother", "twin", "mother", "father", "son", "daughter", "family", "child"],
+      "type": "stateful"
+    },
+    "physical_health": {
+      "description": "The character's physical health condition, including injuries, special physiological states, or disabilities.",
+      "keywords": ["injured", "shot", "ill", "sick", "pregnant", "coma", "dead", "blind", "disabled", "wound", "poisoned"],
+      "type": "stateful"
+    },
+    "mental_status": {
+      "description": "The character's mental, psychological state, or core emotion in a specific scene. This is a high-frequency, situational attribute.",
+      "keywords": ["sad", "happy", "angry", "anxious", "confused", "determined", "amnesia", "depressed", "breakdown", "calm", "insane", "nervous", "missing someone"],
+      "type": "ephemeral"
+    },
+    "key_skill": {
+      "description": "A specific ability, knowledge, or talent possessed by the character that significantly impacts plot development.",
+      "keywords": ["hacking", "marksman", "fluent in", "password", "strategy", "combat", "lockpicking", "forgery", "mind-reading", "hypnosis", "acting"],
+      "type": "stateful"
+    },
+    "intrinsic_trait": {
+      "description": "Describes the character's internal, relatively stable, core personality traits. Usually consistent throughout the story, unless major events like 'rebirth/transmigration' occur.",
+      "keywords": ["cunning", "loyal", "brave", "cowardly", "naive", "kind", "ruthless", "selfish", "optimistic", "pessimistic", "stubborn", "suspicious", "decisive"],
+      "type": "constant"
+    },
+    "gender": {
+      "description": "The character's biological or social gender. In most stories, this is a constant attribute.",
+      "keywords": ["male", "female", "man", "woman", "boy", "girl", "he", "she", "Mr.", "Mrs.", "Ms."],
+      "type": "constant"
+    },
+    "social_status": {
+      "description": "The character's public image, reputation, or non-occupational identity defined by social relationships.",
+      "keywords": ["heiress", "fugitive", "celebrity", "socialite", "outcast", "CEO's wife", "hero", "billionaire", "bankrupt", "homeless"],
+      "type": "stateful"
+    }
+  }
+}

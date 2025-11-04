@@ -1,0 +1,560 @@
+{
+  "generation_date": "2025-10-24T03:56:48.067604",
+  "source_file": "narrative_blueprint_28099a52_KRe4vd0.json",
+  "identified_facts_by_character": {
+    "车小小": [
+      {
+        "scene_id": 1,
+        "attribute": "职业",
+        "value": "海晏集团职员",
+        "source_text": "车小小 海晏集团职员",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 1,
+        "attribute": "扮演身份",
+        "value": "和风集团继承人宋安娜",
+        "source_text": "她的目的是假扮闺蜜和风集团继承人宋安娜",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 1,
+        "attribute": "扮演身份",
+        "value": "和风集团继承人宋安娜",
+        "source_text": "我就是和风集团继承人 宋安娜",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 2,
+        "attribute": "技能",
+        "value": "演技超群",
+        "source_text": "哪次不是多亏演技超群的你",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 4,
+        "attribute": "技能",
+        "value": "演技过人",
+        "source_text": "我确实演技过人呐",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 10,
+        "attribute": "健康状态",
+        "value": "皮肤敏感",
+        "source_text": "我本来皮肤就比较敏感",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 11,
+        "attribute": "性格特征",
+        "value": "大胆",
+        "source_text": "提议一起去开房",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 16,
+        "attribute": "扮演身份",
+        "value": "扮演喜欢“养鱼”的渣女",
+        "source_text": "利用刚才的事把自己塑造成一个喜欢“养鱼”的渣女",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 16,
+        "attribute": "性别",
+        "value": "女",
+        "source_text": "本小姐",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 16,
+        "attribute": "性格特征",
+        "value": "机智",
+        "source_text": "车小小灵机一动",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 16,
+        "attribute": "其他",
+        "value": "不是宋安娜",
+        "source_text": "你认错人了",
+        "suggested_attribute": "真实身份",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 21,
+        "attribute": "扮演身份",
+        "value": "假扮成宋安娜",
+        "source_text": "假扮成“宋安娜”的车小小",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 24,
+        "attribute": "职业",
+        "value": "公司最底层的小职员",
+        "source_text": "你只是你们公司最底层的小职员",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 24,
+        "attribute": "技能",
+        "value": "演技",
+        "source_text": "我都演得那么过分",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 26,
+        "attribute": "扮演身份",
+        "value": "试图隐藏身份",
+        "source_text": "车小小没办法只好将头发散下来盖住脸，缩到了电梯的角落里站着希望不要被认出来",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 26,
+        "attribute": "职业",
+        "value": "有工牌",
+        "source_text": "你的工牌掉了",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 29,
+        "attribute": "扮演身份",
+        "value": "担心身份暴露",
+        "source_text": "我要是暴露了怎么办？",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 29,
+        "attribute": "技能",
+        "value": "演技超群",
+        "source_text": "你可是演技超群的影后",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 29,
+        "attribute": "社会属性",
+        "value": "与宋安娜是朋友",
+        "source_text": "上学的时候为了保护你 我可是一头就撞在墙上",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 30,
+        "attribute": "扮演身份",
+        "value": "化浓妆",
+        "source_text": "车小小又化上了浓妆",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 30,
+        "attribute": "其他",
+        "value": "有两部手机",
+        "source_text": "你有两部手机？",
+        "suggested_attribute": "个人物品",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 30,
+        "attribute": "家庭状态",
+        "value": "被家里逼婚",
+        "source_text": "我是被家里逼的好吗",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 32,
+        "attribute": "家庭状态",
+        "value": "有父亲",
+        "source_text": "我爸？",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 32,
+        "attribute": "扮演身份",
+        "value": "不希望父亲发现自己浓妆打扮",
+        "source_text": "车小小害怕被爸爸发现自己这副浓妆的样子",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 34,
+        "attribute": "社会属性",
+        "value": "与宋安娜同住",
+        "source_text": "宋安娜和车小小在家里聊天",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 37,
+        "attribute": "职业",
+        "value": "在楚昊轩公司上班",
+        "source_text": "千万别暴露 我在他公司上班的事情",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 39,
+        "attribute": "性格特征",
+        "value": "笨拙",
+        "source_text": "不小心撞到了走廊上的路人后自己滑倒了，滑倒的瞬间鞋子也飞了出去",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 41,
+        "attribute": "职业",
+        "value": "公司员工",
+        "source_text": "楚昊轩看到了车小小的工牌",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 41,
+        "attribute": "技能",
+        "value": "曾提出非常优秀的策划案",
+        "source_text": "车小小曾经提出的非常优秀的策划案",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 41,
+        "attribute": "性格特征",
+        "value": "对策划有见解且健谈",
+        "source_text": "开始滔滔不绝的说自己对于策划的见解",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 41,
+        "attribute": "技能",
+        "value": "曾提出“轻食鸡汤饭”策划",
+        "source_text": "轻食鸡汤饭是你提的策划？ 是我",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 41,
+        "attribute": "技能",
+        "value": "曾提出“四季饮茶”策划",
+        "source_text": "四季饮茶也是你提的？ 四季饮茶不是被pass了吗？",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 41,
+        "attribute": "性格特征",
+        "value": "对茶文化与餐饮结合的策划有独到见解",
+        "source_text": "我的策划提的有些早了 咱们国家的茶文化这么丰富多彩 把餐饮和茶结合 既能宣传茶文化 又能制造特色的营销点 现在人们文化意识不断增强 正好可以切入",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 46,
+        "attribute": "性格特征",
+        "value": "容易开心，不设防",
+        "source_text": "车小小没多想就开心地答应了",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 47,
+        "attribute": "性格特征",
+        "value": "有警惕心",
+        "source_text": "车小小怀疑今天宋安娜今天对自己这么好是另有企图",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 47,
+        "attribute": "其他",
+        "value": "曾替宋安娜相亲并因此产生心理阴影",
+        "source_text": "你不会又让我替你去相亲吧 我可做不了啊 我都有心理阴影了",
+        "suggested_attribute": "经历",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 50,
+        "attribute": "家庭状态",
+        "value": "父母拥有一家甜品店",
+        "source_text": "那是我爸妈的甜品店",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 50,
+        "attribute": "其他",
+        "value": "曾为宋安娜办事获得1000元报酬",
+        "source_text": "答应事成之后给我一个东西 大概1,000块",
+        "suggested_attribute": "经济状况",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 50,
+        "attribute": "其他",
+        "value": "需要钱，且现有工作收入不足以攒够",
+        "source_text": "我也是需要一笔钱 光靠我的工作根本攒不够啊",
+        "suggested_attribute": "经济状况",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 50,
+        "attribute": "职业",
+        "value": "上班族",
+        "source_text": "你还是个上班族",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 50,
+        "attribute": "职业",
+        "value": "在一家小公司工作",
+        "source_text": "就是一家小公司 非常非常小的公司",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 52,
+        "attribute": "其他",
+        "value": "经济能力有限",
+        "source_text": "我真的人小力微 也没有办法给富裕的您 带来什么金钱赔偿",
+        "suggested_attribute": "经济状况",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 53,
+        "attribute": "技能",
+        "value": "擅长随机应变和口头蒙混过关",
+        "source_text": "车小小随便编了个理由并借机夸赞了楚昊轩一番，才算是蒙混过关。",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 53,
+        "attribute": "性格特征",
+        "value": "有心眼，谨慎",
+        "source_text": "车小小无奈答应，但还是留了个心眼没有给楚昊轩自己的真名",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 53,
+        "attribute": "职业",
+        "value": "每个工作日都会去父母的甜品店帮忙",
+        "source_text": "我爸妈的甜品店 一直都没招人 每个工作日我都是要去帮忙的",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 53,
+        "attribute": "其他",
+        "value": "隐瞒真名",
+        "source_text": "车车不能告诉他真名 不然指定完蛋",
+        "suggested_attribute": "身份",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 53,
+        "attribute": "扮演身份",
+        "value": "假名是“车星星”",
+        "source_text": "车星星 星星的星星",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 55,
+        "attribute": "性格特征",
+        "value": "脾气火爆",
+        "source_text": "宋安娜你还敢不回我消息 别让我见到你 不然我拔光你的头发",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 56,
+        "attribute": "心理状态",
+        "value": "气鼓鼓",
+        "source_text": "车小小则气鼓鼓的坐在床边",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 56,
+        "attribute": "扮演身份",
+        "value": "曾说了个假名字",
+        "source_text": "说了个假名字",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 56,
+        "attribute": "职业",
+        "value": "某公司员工",
+        "source_text": "他不知道你是他公司员工",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 56,
+        "attribute": "其他",
+        "value": "家里经营甜品店",
+        "source_text": "我家甜品店",
+        "suggested_attribute": "财产/家庭产业",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 57,
+        "attribute": "家庭状态",
+        "value": "是女儿",
+        "source_text": "我才是你亲闺女",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 58,
+        "attribute": "扮演身份",
+        "value": "曾被楚昊轩误称为“车星星”",
+        "source_text": "车星星",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 59,
+        "attribute": "心理状态",
+        "value": "感到愤怒和无语",
+        "source_text": "凌晨3点搞什么嘛 这人有病啊我去",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 59,
+        "attribute": "心理状态",
+        "value": "失眠",
+        "source_text": "睡不着了",
+        "type": "情境性"
+      }
+    ],
+    "宋安娜": [
+      {
+        "scene_id": 1,
+        "attribute": "社会属性",
+        "value": "和风集团继承人",
+        "source_text": "她的目的是假扮闺蜜和风集团继承人宋安娜",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 20,
+        "attribute": "家庭状态",
+        "value": "拥有父亲",
+        "source_text": "宋安娜突然接到了她爸爸的电话",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 23,
+        "attribute": "家庭状态",
+        "value": "将与楚昊轩结婚",
+        "source_text": "楚昊轩要和我结婚",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 24,
+        "attribute": "社会属性",
+        "value": "父亲希望她接班",
+        "source_text": "哪次你爸让你接班",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 24,
+        "attribute": "社会属性",
+        "value": "富二代",
+        "source_text": "我也只是想平平无奇做个富二代而已",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 24,
+        "attribute": "性格特征",
+        "value": "不喜欢商场尔虞我诈",
+        "source_text": "不喜欢商场那些尔虞我诈",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 29,
+        "attribute": "性格特征",
+        "value": "曾为保护车小小而受伤",
+        "source_text": "上学的时候为了保护你我可是一头就撞在墙上",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 41,
+        "attribute": "社会属性",
+        "value": "是真宋安娜",
+        "source_text": "楚昊轩接到了真宋安娜的电话",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 45,
+        "attribute": "社会属性",
+        "value": "身份曾被冒充用于相亲",
+        "source_text": "既然跟你相亲的宋安娜是假的",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 46,
+        "attribute": "性格特征",
+        "value": "曾欺骗楚昊轩",
+        "source_text": "楚昊轩没有因为你骗他而生气吧",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 47,
+        "attribute": "其他",
+        "value": "曾安排车小小替自己相亲",
+        "source_text": "你不会又让我替你去相亲吧",
+        "suggested_attribute": "过往行为",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 48,
+        "attribute": "社会属性",
+        "value": "是车小小朋友",
+        "source_text": "他知道咱俩是朋友",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 48,
+        "attribute": "心理状态",
+        "value": "害怕楚昊轩查出车小小是其员工",
+        "source_text": "我怕他查出你是他员工",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 50,
+        "attribute": "其他",
+        "value": "曾支付车小小报酬以替自己相亲",
+        "source_text": "我是问你帮宋安娜她给了你多少钱",
+        "suggested_attribute": "过往行为",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 54,
+        "attribute": "家庭状态",
+        "value": "曾被安排与楚昊轩结婚",
+        "source_text": "婚礼什么时候举办",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 54,
+        "attribute": "家庭状态",
+        "value": "将不会与楚昊轩结婚",
+        "source_text": "爷爷我不会和宋安娜结婚",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 56,
+        "attribute": "心理状态",
+        "value": "认为楚昊轩难骗且抓住了自己的弱点",
+        "source_text": "你也知道他那个人有多不好骗 他一下就抓住了我的命脉",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 56,
+        "attribute": "心理状态",
+        "value": "疑惑",
+        "source_text": "宋安娜感到疑惑",
+        "type": "情境性"
+      },
+      {
+        "scene_id": 57,
+        "attribute": "性格特征",
+        "value": "善于撒娇",
+        "source_text": "宋安娜趁机向车小小妈妈撒娇，扑进车小小妈妈的怀里",
+        "type": "恒定"
+      },
+      {
+        "scene_id": 57,
+        "attribute": "家庭状态",
+        "value": "被车小小妈妈视为家人",
+        "source_text": "你小时候不就想让她当你妹妹吗",
+        "type": "状态性"
+      },
+      {
+        "scene_id": 57,
+        "attribute": "技能",
+        "value": "演技好",
+        "source_text": "哇你还敢说你演技不好 宋安娜",
+        "type": "状态性"
+      }
+    ]
+  },
+  "metrics_calculation_results": null
+}
