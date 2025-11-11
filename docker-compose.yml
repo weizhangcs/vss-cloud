@@ -8,7 +8,7 @@ services:
     volumes:
       - .:/app
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
-      - shared_data:/app/shared_media
+      - ./shared_media:/app/shared_media
     ports:
       - "8000:8000"
     depends_on:
@@ -38,7 +38,7 @@ services:
     volumes:
       - .:/app # 同样挂载代码目录，以便代码更改时能自动重载
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
-      - shared_data:/app/shared_media
+      - ./shared_media:/app/shared_media
     depends_on:
       - redis
       - db
@@ -47,4 +47,3 @@ services:
 
 volumes:
   postgres_data:
-  shared_data:

@@ -37,7 +37,8 @@ class TaskCreateSerializer(serializers.ModelSerializer):
             Task.TaskType.CHARACTER_PIPELINE,
             Task.TaskType.DEPLOY_RAG_CORPUS,
             Task.TaskType.GENERATE_NARRATION,
-            Task.TaskType.GENERATE_EDITING_SCRIPT
+            Task.TaskType.GENERATE_EDITING_SCRIPT,
+            Task.TaskType.GENERATE_DUBBING
         ]  # 这是一个白名单
         if value not in cloud_native_tasks:
             raise serializers.ValidationError(

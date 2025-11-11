@@ -40,3 +40,6 @@ django-fsm-2-admin
 google-cloud-storage
 google-cloud-aiplatform
 pydantic~=2.0
+
+PyYAML
+mutagen

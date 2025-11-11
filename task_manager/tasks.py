@@ -3,6 +3,7 @@ import time
 import tempfile
 import json
 from pathlib import Path
+from typing import Dict
 
 from celery import shared_task
 from celery.utils.log import get_task_logger  # 1. 导入 Celery 的专业日志记录器
@@ -21,6 +22,11 @@ from ai_services.common.gemini.gemini_processor import GeminiProcessor
 from ai_services.common.gemini.cost_calculator_v2 import CostCalculator
 from ai_services.narration.narration_generator import NarrationGenerator
 from ai_services.editing.broll_selector_service import BrollSelectorService
+
+import yaml # <-- [新增]
+from ai_services.dubbing.dubbing_engine import DubbingEngine # <-- [新增]
+from ai_services.dubbing.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy # <-- [新增]
+from ai_services.dubbing.strategies.base_strategy import TTSStrategy
 
 # 2. 获取一个 Celery Task 专用的 logger 实例
 logger = get_task_logger(__name__)
@@ -60,6 +66,8 @@ def execute_cloud_native_task(task_id):
             result = _handle_character_pipeline(task)
         elif task.task_type == Task.TaskType.GENERATE_EDITING_SCRIPT:
             result = _handle_editing_script_generation(task)
+        elif task.task_type == Task.TaskType.GENERATE_DUBBING:
+            result = _handle_dubbing_generation(task)
         else:
             raise ValueError(f"Unsupported cloud-native task type: {task.task_type}")
 
@@ -503,4 +511,86 @@ def _handle_editing_script_generation(task: Task) -> dict:
         "script_summary": {
             "total_sequences": len(result_data.get("editing_script", []))
         }
+    }
+
+
+def _handle_dubbing_generation(task: Task) -> dict:
+    """
+    [新增] 处理“生成配音”任务的核心逻辑（组合根）。
+    """
+    logger.info(f"Starting DUBBING GENERATION for Task ID: {task.id}...")
+
+    payload = task.payload
+    # 1. 从 payload 中获取路径和参数
+    narration_path_str = payload.get("absolute_input_narration_path")
+    output_file_path_str = payload.get("absolute_output_path")  # 这是最终JSON脚本的路径
+    service_params = payload.get("service_params", {})
+
+    # [核心修正]
+    # 使用 .pop() 来提取 'template_name'。
+    # 这会从 service_params 字典中【移除】该键，
+    # 从而避免在 **service_params 解包时重复传递。
+    template_name = service_params.pop("template_name", None)
+
+    # 现在我们的检查逻辑是正确的
+    if not all([narration_path_str, output_file_path_str, template_name]):
+        raise ValueError("Payload for GENERATE_DUBBING is missing required keys: "
+                         "absolute_input_narration_path, absolute_output_path, or "
+                         "service_params.template_name")
+
+    narration_path = Path(narration_path_str)
+    output_json_path = Path(output_file_path_str)  # 最终的 JSON 脚本路径
+
+    # 2. 为此任务创建专属的音频文件输出目录
+    audio_work_dir = settings.SHARED_TMP_ROOT / f"dubbing_task_{task.id}_audio"
+    audio_work_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Audio files will be saved to: {audio_work_dir}")
+
+    # 3. 组装依赖 (Composition Root)
+    logger.info("Assembling dependencies for DubbingEngine service...")
+
+    # 3.1 加载 YAML 模板
+    templates_config_path = settings.BASE_DIR / 'ai_services' / 'dubbing' / 'configs' / 'dubbing_templates.yaml'
+    with templates_config_path.open('r', encoding='utf-8') as f:
+        all_templates = yaml.safe_load(f)
+
+    # 3.2 实例化所需的策略 (按需添加)
+    strategy_paieas = AliyunPAIEASStrategy(
+        service_url=settings.PAI_EAS_SERVICE_URL,
+        token=settings.PAI_EAS_TOKEN
+    )
+
+    available_strategies: Dict[str, TTSStrategy] = {
+        "aliyun_paieas": strategy_paieas
+    }
+
+    # 4. 实例化 DubbingEngine 服务并注入所有依赖
+    dubbing_service = DubbingEngine(
+        logger=logger,
+        work_dir=audio_work_dir,  # 注入音频工作目录
+        strategies=available_strategies,
+        templates=all_templates,
+        shared_root_path=settings.SHARED_ROOT  # 注入共享根目录
+    )
+
+    # 5. 执行服务
+    #    [核心修正] 现在的 **service_params 不再包含 'template_name'
+    result_data = dubbing_service.execute(
+        narration_path=narration_path,
+        template_name=template_name,  # 显式传递
+        **service_params  # 安全解包（只包含其他参数，如果有的话）
+    )
+
+    # 6. 将服务返回的 JSON 脚本保存到任务指定的输出路径
+    with output_json_path.open('w', encoding='utf-8') as f:
+        json.dump(result_data, f, ensure_ascii=False, indent=2)
+
+    logger.info(f"DUBBING GENERATION finished. Output JSON script saved to: {output_json_path}")
+
+    # 7. 返回 Celery Task 的最终结果 (存入 Task.result 字段)
+    return {
+        "message": "Dubbing script and audio files generated successfully.",
+        "output_file_path": str(output_json_path.relative_to(settings.SHARED_ROOT)),
+        "audio_output_directory": str(audio_work_dir.relative_to(settings.SHARED_ROOT)),
+        "total_clips_generated": len(result_data.get("dubbing_script", []))
     }

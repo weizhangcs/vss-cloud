@@ -20,6 +20,7 @@ class Task(TimeStampedModel):
         CHARACTER_IDENTIFIER = "CHARACTER_IDENTIFIER", _("Character Identifier (Cloud)")
         CHARACTER_PIPELINE = "CHARACTER_PIPELINE", _("Character Analysis Pipeline (Cloud)")
         GENERATE_NARRATION = "GENERATE_NARRATION", _("Generate Narration (Cloud)")
+        GENERATE_DUBBING = "GENERATE_DUBBING", _("Generate Dubbing (Cloud)")
         GENERATE_EDITING_SCRIPT = "GENERATE_EDITING_SCRIPT", _("Generate Editing Script (Cloud)")
         RUN_DUBBING = "RUN_DUBBING", _("Run Dubbing (Edge)")
         RUN_SYNTHESIS = "RUN_SYNTHESIS", _("Run Synthesis (Edge)")

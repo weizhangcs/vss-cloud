@@ -318,3 +318,9 @@ SHARED_LOG_ROOT = SHARED_ROOT / "logs"
 # 在 Django 启动时，确保这些目录存在
 SHARED_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 SHARED_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+
+# ==============================================================================
+# Aliyun PAI-EAS (CosyVoice)
+# ==============================================================================
+PAI_EAS_SERVICE_URL = config('PAI_EAS_SERVICE_URL', default='')
+PAI_EAS_TOKEN = config('PAI_EAS_TOKEN', default='')
