@@ -118,12 +118,22 @@ class BrollSelectorService(AIServiceMixin):
             List[Dict]:
         """
         [核心修正] 构建B-roll素材池。
-        新逻辑：对每个场景独立进行对话分组，然后将所有结果合并。
         """
         final_pool = []
 
+        # --- [BUG FIX: 确保场景ID类型一致性] ---
+        # 1. 尝试将所有元素转换为整数，以确保正确的数字排序。
+        #    如果转换失败，则记录错误并返回空列表，防止程序崩溃。
+        try:
+            cleaned_scene_ids = [int(sid) for sid in scene_ids]
+        except (TypeError, ValueError) as e:
+            self.logger.error(f"严重错误: 输入的场景ID列表包含无法转换为整数的元素。原始列表: {scene_ids}", exc_info=True)
+            return []
+        # --- [BUG FIX END] ---
+
         # 1. 遍历每一个关联的场景ID
-        for sid in sorted(scene_ids):
+        for sid in sorted(cleaned_scene_ids):
+            # 将整数ID转换为字符串，用于查找以字符串为键的 scenes_map
             scene = scenes_map.get(str(sid))
             if not scene: continue
 
@@ -183,7 +193,9 @@ class BrollSelectorService(AIServiceMixin):
         )
         try:
             response_data, _ = self.gemini_processor.generate_content(
-                model_name=kwargs.get('model', 'gemini-1.5-pro-latest'), prompt=prompt, temperature=0.1
+                model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
+                prompt=prompt,
+                temperature=kwargs.get('default_temp', 0.1)
             )
             selected_ids_str = response_data.get("selected_ids", [])
             selected_indices = [int(sid.replace("ID-", "")) for sid in selected_ids_str]

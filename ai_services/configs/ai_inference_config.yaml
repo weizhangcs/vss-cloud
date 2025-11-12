@@ -1,0 +1,21 @@
+# ai_services/configs/ai_inference_config.yaml
+# 统一管理所有基于Gemini的AI服务的默认模型和推理参数。
+
+# 人物事实识别服务 (CharacterIdentifier)
+character_identifier:
+  # FIX: 最终修正为最稳定的、无后缀的 Canonical ID，以最大限度解决 404 错误。
+  default_model: "gemini-2.0-flash"
+  default_temp: 0.1
+  # 保持场景分块大小的默认值
+  default_scene_chunk_size: 10
+
+# 解说词生成服务 (NarrationGenerator)
+narration_generator:
+  default_model: "gemini-2.5-flash"
+  default_temp: 0.3
+  default_rag_top_k: 100
+
+# B-Roll 选择器服务 (BrollSelectorService)
+broll_selector_service:
+  default_model: "gemini-2.5-flash"
+  default_temp: 0.1

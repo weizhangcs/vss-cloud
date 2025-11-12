@@ -19,7 +19,7 @@ from django.conf import settings
 from ai_services.analysis.character.character_identifier import CharacterIdentifier
 from ai_services.analysis.character.character_metrics_calculator import CharacterMetricsCalculator
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.common.gemini.cost_calculator_v2 import CostCalculator
+from ai_services.common.gemini.cost_calculator import CostCalculator
 from ai_services.narration.narration_generator import NarrationGenerator
 from ai_services.editing.broll_selector_service import BrollSelectorService
 
@@ -99,12 +99,32 @@ def _handle_narration_generation(task: Task) -> dict:
     payload = task.payload
     series_name = payload.get("series_name")
     series_id = payload.get("series_id")
-    output_file_path_str = payload.get("absolute_output_path") # 由 View 注入
+    total_scene_count = payload.get("total_scene_count")
     service_params = payload.get("service_params", {})
+    output_file_path_str = payload.get("absolute_output_path")  # 由 View 注入
 
+    if not total_scene_count or not isinstance(total_scene_count, int):
+        # 如果 payload 中没有，抛出异常，强制上游编排器修复
+        raise ValueError(
+            "Payload is missing 'total_scene_count' or it is not an integer. RAG deployment must precede this.")
     if not all([series_name, series_id, output_file_path_str]):
         raise ValueError(
             "Payload for GENERATE_NARRATION is missing required keys: series_name, series_id, absolute_output_path.")
+
+    # --- [新增] 1. 加载 AI 推理配置 ---
+    config_path = settings.BASE_DIR / 'ai_services' / 'configs' / 'ai_inference_config.yaml'
+    try:
+        with config_path.open('r', encoding='utf-8') as f:
+            ai_config_full = yaml.safe_load(f)
+        # 提取 narration_generator 块的默认值
+        ai_config = ai_config_full.get('narration_generator', {})
+    except FileNotFoundError:
+        logger.error(f"AI 配置 YAML 文件未找到: {config_path}")
+        raise
+    except KeyError:
+        logger.error(f"AI 配置 YAML 文件中缺少 'narration_generator' 块。")
+        raise
+    # --- [新增结束] ---
 
     logger.info("Assembling dependencies for NarrationGenerator service...")
     instance_id = task.organization.name
@@ -128,10 +148,17 @@ def _handle_narration_generation(task: Task) -> dict:
         gemini_processor=gemini_processor
     )
 
+    # --- [修改] 2. 合并配置并调用服务 ---
+    # 默认配置 (ai_config) 复制，然后用用户参数 (service_params) 覆盖，确保用户传入的参数优先级最高
+    final_params = ai_config.copy()
+    final_params.update(service_params)
+    logger.info(f"Final AI inference parameters: {final_params}")
+
     result_data = narration_service.execute(
         series_name=series_name,
         corpus_display_name=corpus_display_name,
-        **service_params
+        total_scene_count=total_scene_count,
+        **final_params  # <-- 传入合并后的参数
     )
 
     # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)
@@ -225,6 +252,22 @@ def _handle_character_identification(task: Task) -> dict:
     if not all([input_file_path_str, output_file_path_str]) or service_params is None:
         raise ValueError("Payload is missing required absolute paths or service_params.")
 
+    # --- [新增] 1. 加载 AI 推理配置 ---
+    # 使用 settings.BASE_DIR 来构建配置文件的绝对路径
+    config_path = settings.BASE_DIR / 'ai_services' / 'configs' / 'ai_inference_config.yaml'
+    try:
+        with config_path.open('r', encoding='utf-8') as f:
+            ai_config_full = yaml.safe_load(f)
+        # 提取 character_identifier 块的默认值
+        ai_config = ai_config_full.get('character_identifier', {})
+    except FileNotFoundError:
+        logger.error(f"AI 配置 YAML 文件未找到: {config_path}")
+        raise
+    except KeyError:
+        logger.error(f"AI 配置 YAML 文件中缺少 'character_identifier' 块。")
+        raise
+    # --- [新增结束] ---
+
     logger.info("Assembling dependencies for CharacterIdentifier service...")
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
@@ -258,10 +301,17 @@ def _handle_character_identification(task: Task) -> dict:
     if not input_file_path.is_file():
         raise FileNotFoundError(f"Input file not found by worker at path: {input_file_path}")
 
+    # --- [新增] 2. 合并配置并调用服务 ---
+    # 默认配置 (ai_config) 复制，然后用用户参数 (service_params) 覆盖，确保用户传入的参数优先级最高
+    final_params = ai_config.copy()
+    final_params.update(service_params)
+    logger.info(f"Final AI inference parameters: {final_params}")
+
     result_data = identifier_service.execute(
         enhanced_script_path=input_file_path,
-        **service_params
+        **final_params # <-- 传入合并后的参数
     )
+    # --- [修改结束] ---
 
     if result_data.get("status") != "success":
         raise RuntimeError(f"CharacterIdentifier service returned a non-success status: {result_data}")
@@ -470,6 +520,21 @@ def _handle_editing_script_generation(task: Task) -> dict:
     if not all([dubbing_path_str, blueprint_path_str, output_file_path_str]):
         raise ValueError("Payload for GENERATE_EDITING_SCRIPT is missing required absolute paths.")
 
+    # --- [新增] 1. 加载 AI 推理配置 ---
+    config_path = settings.BASE_DIR / 'ai_services' / 'configs' / 'ai_inference_config.yaml'
+    try:
+        with config_path.open('r', encoding='utf-8') as f:
+            ai_config_full = yaml.safe_load(f)
+        # 提取 broll_selector_service 块的默认值
+        ai_config = ai_config_full.get('broll_selector_service', {})
+    except FileNotFoundError:
+        logger.error(f"AI 配置 YAML 文件未找到: {config_path}")
+        raise
+    except KeyError:
+        logger.error(f"AI 配置 YAML 文件中缺少 'broll_selector_service' 块。")
+        raise
+    # --- [新增结束] ---
+
     logger.info("Assembling dependencies for BrollSelectorService...")
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
@@ -491,10 +556,16 @@ def _handle_editing_script_generation(task: Task) -> dict:
         gemini_processor=gemini_processor
     )
 
+    # --- [修改] 2. 合并配置并调用服务 ---
+    # 默认配置 (ai_config) 复制，然后用用户参数 (service_params) 覆盖，确保用户传入的参数优先级最高
+    final_params = ai_config.copy()
+    final_params.update(service_params)
+    logger.info(f"Final AI inference parameters: {final_params}")
+
     result_data = selector_service.execute(
         dubbing_path=Path(dubbing_path_str),
         blueprint_path=Path(blueprint_path_str),
-        **service_params
+        **final_params  # <-- 传入合并后的参数
     )
 
     # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)

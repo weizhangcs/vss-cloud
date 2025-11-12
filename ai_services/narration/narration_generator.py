@@ -67,20 +67,35 @@ class NarrationGenerator(AIServiceMixin):
             self.logger.error(f"连接RAG语料库时出错: {e}", exc_info=True)
             raise
 
-    def execute(self, series_name: str, corpus_display_name: str, **kwargs) -> Dict[str, Any]:
+    def execute(self, series_name: str, corpus_display_name: str, total_scene_count: int, **kwargs) -> Dict[str, Any]:
         """
         为整个剧集执行解说词生成任务。
 
         Args:
             series_name (str): 剧集/故事的名称，用于生成查询。
             corpus_display_name (str): 要查询的目标RAG语料库的显示名称。
+            total_scene_count (int): 剧本中的总场景数（RAG Chunk数量），用于 top_k 优化。
             **kwargs: 其他可选参数 (如 model, temp, lang, rag_top_k, debug)。
 
         Returns:
             Dict[str, Any]: 包含解说词脚本和元数据的字典。
         """
         try:
-            rag_top_k = kwargs.get('rag_top_k', 200)
+            # 从 kwargs 中获取参数，并设置最大性能上限
+            RAG_MAX_CAP = kwargs.get('rag_max_cap', 100)  # 使用 YAML/用户设定的性能上限
+
+            # 1. 获取请求的 top_k 值 (用户参数 > YAML默认值)
+            requested_top_k = kwargs.get('rag_top_k', kwargs.get('default_rag_top_k', RAG_MAX_CAP))
+
+            # 2. 应用业务逻辑: 必须检索所有上下文，但不能超过性能上限
+            if total_scene_count <= RAG_MAX_CAP:
+                # 场景数少于上限，必须检索所有场景，确保元数据不丢失
+                final_top_k = total_scene_count
+            else:
+                # 场景数过多，应用性能上限，同时尊重用户传入的 top_k
+                final_top_k = min(requested_top_k, RAG_MAX_CAP)
+
+            self.logger.info(f"RAG Retrieval Contexts: Total Scenes={total_scene_count}, Final Top K={final_top_k}")
 
             # 步骤 1: 连接到RAG语料库
             rag_corpus = self._get_rag_corpus(corpus_display_name)
@@ -89,7 +104,7 @@ class NarrationGenerator(AIServiceMixin):
             query_text = f"为剧集“{series_name}”生成一份完整的剧情解说词，请提供所有相关的场景资料。"
 
             # 步骤 3: 从RAG检索上下文
-            retrieved_docs = self._query_rag_engine(rag_corpus, query_text, top_k=rag_top_k)
+            retrieved_docs = self._query_rag_engine(rag_corpus, query_text, top_k=final_top_k)
             if not retrieved_docs:
                 self.logger.warning(f"未能为剧集 '{series_name}' 从RAG中检索到任何信息。")
                 # 返回一个特定的结构体，而不是抛出异常
@@ -110,9 +125,10 @@ class NarrationGenerator(AIServiceMixin):
                 rag_context=context
             )
             response_data, usage = self.gemini_processor.generate_content(
-                model_name=kwargs.get('model', 'gemini-2.5-flash'),
+                # 从 kwargs 中获取 model 和 temp，不再使用硬编码的默认值
+                model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
                 prompt=prompt,
-                temperature=kwargs.get('temp', 0.3)
+                temperature=kwargs.get('default_temp', 0.3)
             )
             self.logger.info("LLM已成功返回解说词数据。")
 

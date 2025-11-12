@@ -91,7 +91,7 @@ class CharacterIdentifier(AIServiceMixin):
         session_start_time = datetime.now()
         try:
             # --- 步骤 1: 环境准备 ---
-            # 加载特定语言的标签和剧本源数据。
+            # lang 保持硬编码的 'zh' 作为最终的语言回退值 (因为 YAML 不控制所有语言)
             lang = kwargs.get('lang', 'zh')
             self._load_localization_file(self.localization_path, lang)
 
@@ -99,11 +99,11 @@ class CharacterIdentifier(AIServiceMixin):
                 script_data = json.load(f)
 
             # --- 步骤 2: 预处理 ---
-            # 构建一个快速查找索引，了解每个角色在哪些场景中直接出现或被提及。
             direct_scenes, mentioned_scenes = self._build_character_scene_index(script_data)
             all_facts_by_character = defaultdict(list)
             total_usage = {}
-            scene_chunk_size = kwargs.get('scene_chunk_size', 10)
+            # 从 kwargs 中获取 scene_chunk_size，不再硬编码 10
+            scene_chunk_size = kwargs.get('default_scene_chunk_size', 10)
 
             # --- 步骤 3: 核心循环 ---
             # 遍历每一个需要分析的角色。
@@ -136,7 +136,7 @@ class CharacterIdentifier(AIServiceMixin):
                         char_name, script_data, chunk_direct_ids, chunk_mentioned_ids,
                         lang=lang,
                         chunk_index=chunk_index,
-                        **other_params
+                        **kwargs
                     )
 
                     # 将单次调用的结果和用量聚合到总结果中。
@@ -201,6 +201,10 @@ class CharacterIdentifier(AIServiceMixin):
         Returns:
             tuple[List[Dict], Dict]: 一个元组，包含识别出的事实列表和本次AI调用的用量信息。
         """
+
+        """
+                为单个角色的一批场景调用AI进行事实识别。
+                """
         chunk_index = kwargs.get('chunk_index', 0)
 
         # 步骤 1: 构建AI上下文（角色专属情报报告）
@@ -231,12 +235,14 @@ class CharacterIdentifier(AIServiceMixin):
             self._save_debug_artifact("dossier.txt", dossier, char_name, chunk_index)
             self._save_debug_artifact("prompt.txt", prompt, char_name, chunk_index)
 
-        # 步骤 4: 调用AI模型
-        response_data, usage = self.gemini_processor.generate_content(
-            model_name=kwargs.get('model', 'gemini-2.5-flash'),
-            prompt=prompt, temperature=kwargs.get('temp', 0.1)
-        )
-        facts = response_data.get("identified_facts", [])
+            # 步骤 4: 调用AI模型
+            # 从 kwargs 中获取 model 和 temp，不再硬编码
+            response_data, usage = self.gemini_processor.generate_content(
+                model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
+                prompt=prompt,
+                temperature=kwargs.get('default_temp', 0.1)
+            )
+            facts = response_data.get("identified_facts", [])
 
         # 步骤 5: 后处理 - 为AI返回的事实注入'type'元数据
         # AI只返回属性名称，我们根据schema为其补充属性类别（如'恒定', '状态性'等）
