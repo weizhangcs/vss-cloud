@@ -21,3 +21,7 @@ RUN mkdir -p /etc/apt/keyrings && \
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
 
 COPY . /app/
+
+# --- 在构建时收集静态文件 ---
+ENV DJANGO_SETTINGS_MODULE core.settings
+RUN python manage.py collectstatic --noinput
