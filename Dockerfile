@@ -22,6 +22,4 @@ RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r req
 
 COPY . /app/
 
-# --- 在构建时收集静态文件 ---
-ENV DJANGO_SETTINGS_MODULE core.settings
-RUN python manage.py collectstatic --noinput
+COPY conf/nginx.template.conf /etc/nginx/conf.d/default.conf.template

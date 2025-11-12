@@ -48,9 +48,8 @@ services:
     ports:
       - "80:80"
     volumes:
-      # [修改] 挂载模板文件到 Nginx 的配置目录
-      - ./conf/nginx.template.conf:/etc/nginx/conf.d/default.conf.template # <-- 挂载为 .template 后缀
-      - ./staticfiles:/app/staticfiles:ro
+            - ./conf/nginx.template.conf:/etc/nginx/conf.d/default.conf.template
+            - ./staticfiles:/app/staticfiles:ro
     depends_on:
       - web
     # [新增] 注入 Nginx 启动时需要替换的环境变量

@@ -146,7 +146,7 @@ class CharacterIdentifier(AIServiceMixin):
 
             # --- 步骤 4: 任务收尾与报告生成 ---
             # 使用注入的 cost_calculator 计算总成本。
-            model_name = kwargs.get('model', 'gemini-1.5-flash-latest')
+            model_name = kwargs.get('model', 'gemini-2.5-flash')
             total_cost = self.cost_calculator.calculate(model_name, total_usage)
             session_duration = (datetime.now() - session_start_time).total_seconds()
 
@@ -233,7 +233,7 @@ class CharacterIdentifier(AIServiceMixin):
 
         # 步骤 4: 调用AI模型
         response_data, usage = self.gemini_processor.generate_content(
-            model_name=kwargs.get('model', 'gemini-1.5-flash-latest'),
+            model_name=kwargs.get('model', 'gemini-2.5-flash'),
             prompt=prompt, temperature=kwargs.get('temp', 0.1)
         )
         facts = response_data.get("identified_facts", [])

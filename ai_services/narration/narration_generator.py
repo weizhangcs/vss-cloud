@@ -110,7 +110,7 @@ class NarrationGenerator(AIServiceMixin):
                 rag_context=context
             )
             response_data, usage = self.gemini_processor.generate_content(
-                model_name=kwargs.get('model', 'gemini-1.5-pro-latest'),
+                model_name=kwargs.get('model', 'gemini-2.5-flash'),
                 prompt=prompt,
                 temperature=kwargs.get('temp', 0.3)
             )
