@@ -119,9 +119,14 @@ class NarrationGenerator(AIServiceMixin):
 
             # 步骤 4: 调用LLM生成结构化解说词
             self.logger.info("正在调用LLM生成解说词...")
+
+            # [修改点] 优先从 kwargs (含配置) 中获取 default_lang，若无则回退到 'en'
+            # 优先级: API请求参数 > YAML配置 > 代码硬编码
+            current_lang = kwargs.get('lang', kwargs.get('default_lang', 'en'))
+
             prompt = self._build_prompt(
                 prompt_name='narration_generator',
-                lang=kwargs.get('lang', 'zh'),
+                lang=current_lang,  # <-- 使用处理后的语言变量
                 rag_context=context
             )
             response_data, usage = self.gemini_processor.generate_content(

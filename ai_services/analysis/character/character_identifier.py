@@ -91,8 +91,11 @@ class CharacterIdentifier(AIServiceMixin):
         session_start_time = datetime.now()
         try:
             # --- 步骤 1: 环境准备 ---
-            # lang 保持硬编码的 'zh' 作为最终的语言回退值 (因为 YAML 不控制所有语言)
-            lang = kwargs.get('lang', 'zh')
+            # [修改点 1] 实现中心化配置优先级逻辑
+            # 优先级: 1. API请求中的 'lang' -> 2. YAML中的 'default_lang' -> 3. 代码兜底 'en'
+            # 注意：kwargs 是 merged 后的结果，包含了 service_params 和 ai_config
+            lang = kwargs.get('lang', kwargs.get('default_lang', 'en'))
+
             self._load_localization_file(self.localization_path, lang)
 
             with enhanced_script_path.open('r', encoding='utf-8') as f:
@@ -136,7 +139,7 @@ class CharacterIdentifier(AIServiceMixin):
                         char_name, script_data, chunk_direct_ids, chunk_mentioned_ids,
                         lang=lang,
                         chunk_index=chunk_index,
-                        **kwargs
+                        **other_params
                     )
 
                     # 将单次调用的结果和用量聚合到总结果中。
@@ -235,14 +238,14 @@ class CharacterIdentifier(AIServiceMixin):
             self._save_debug_artifact("dossier.txt", dossier, char_name, chunk_index)
             self._save_debug_artifact("prompt.txt", prompt, char_name, chunk_index)
 
-            # 步骤 4: 调用AI模型
-            # 从 kwargs 中获取 model 和 temp，不再硬编码
-            response_data, usage = self.gemini_processor.generate_content(
-                model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
-                prompt=prompt,
-                temperature=kwargs.get('default_temp', 0.1)
-            )
-            facts = response_data.get("identified_facts", [])
+        # 步骤 4: 调用AI模型
+        # 从 kwargs 中获取 model 和 temp，不再硬编码
+        response_data, usage = self.gemini_processor.generate_content(
+            model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
+            prompt=prompt,
+            temperature=kwargs.get('default_temp', 0.1)
+        )
+        facts = response_data.get("identified_facts", [])
 
         # 步骤 5: 后处理 - 为AI返回的事实注入'type'元数据
         # AI只返回属性名称，我们根据schema为其补充属性类别（如'恒定', '状态性'等）

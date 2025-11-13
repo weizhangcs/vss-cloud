@@ -1,0 +1,17 @@
+
+{
+  "zh": {
+    "no_candidates": "(无候选素材)",
+    "clip_type_group": "连贯对话",
+    "clip_type_single": "独立对话",
+    "duration_label": "时长",
+    "content_summary_label": "内容摘要"
+  },
+  "en": {
+    "no_candidates": "(No candidate clips)",
+    "clip_type_group": "Coherent Dialogue",
+    "clip_type_single": "Single Dialogue",
+    "duration_label": "Duration",
+    "content_summary_label": "Content Summary"
+  }
+}

@@ -517,11 +517,19 @@ def _handle_editing_script_generation(task: Task) -> dict:
     output_file_path_str = payload.get("absolute_output_path") # 由 View 注入
     service_params = payload.get("service_params", {})
 
+
+
     if not all([dubbing_path_str, blueprint_path_str, output_file_path_str]):
         raise ValueError("Payload for GENERATE_EDITING_SCRIPT is missing required absolute paths.")
 
     # --- [新增] 1. 加载 AI 推理配置 ---
     config_path = settings.BASE_DIR / 'ai_services' / 'configs' / 'ai_inference_config.yaml'
+
+    # 定义路径
+    prompts_dir = settings.BASE_DIR / 'ai_services' / 'editing' / 'prompts'
+    # [新增] 定义语言包路径
+    localization_path = settings.BASE_DIR / 'ai_services' / 'editing' / 'localization' / 'broll_selector_service.json'
+
     try:
         with config_path.open('r', encoding='utf-8') as f:
             ai_config_full = yaml.safe_load(f)
@@ -549,7 +557,8 @@ def _handle_editing_script_generation(task: Task) -> dict:
     )
 
     selector_service = BrollSelectorService(
-        prompts_dir=settings.BASE_DIR / 'ai_services' / 'editing' / 'prompts',
+        prompts_dir=prompts_dir,
+        localization_path=localization_path,
         logger=logger,
         # [不变] 工作目录应转到 TMP_ROOT
         work_dir=settings.SHARED_TMP_ROOT / f"editing_task_{task.id}_workspace",
