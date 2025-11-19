@@ -23,9 +23,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_DB=visify_story_studio_db
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
+      - TZ=Asia/Shanghai
+    env_file:
+      - .env
 
   redis:
     image: redis:7

@@ -41,7 +41,7 @@ staticfiles/
 # 忽略包含密钥的环境文件
 .env
 .env.*
-!.env.example
+!.env.template
 conf/gcp-credentials.json
 
 # IDE
@@ -57,3 +57,6 @@ conf/gcp-credentials.json
 # ---------------------------------
 # macOS
 .DS_Store
+
+# 临时的本地测试
+tests/
