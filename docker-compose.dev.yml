@@ -4,48 +4,52 @@
 services:
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8001
     volumes:
       - .:/app
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
       - ./shared_media:/app/shared_media
     ports:
-      - "8000:8000"
+      - "8001:8001"
     depends_on:
       - db
       - redis
-    # 我们不再使用 'environment' 块，而是使用 'env_file' 来指向我们的新文件
     env_file:
       - .env
+    environment: # <-- 新增：设置时区
+      - TZ=Asia/Shanghai
 
   db:
     image: postgres:15
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-    # db 服务的环境变量保持不变，因为它们是用来 *配置容器本身* 的
     ports:
-      - "5432:5432"
+      - "8543:8543"
     environment:
       - POSTGRES_DB=visify_story_studio_db
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
+      - TZ=Asia/Shanghai # <-- 新增：设置时区
 
   redis:
     image: redis:7
+    environment: # <-- 新增：设置时区
+      - TZ=Asia/Shanghai
 
   worker:
-    build: .  # 使用与 web 服务相同的 Dockerfile 和镜像
-    # Worker 服务的启动命令
+    build: .
     command: celery -A core.celery worker -l info
     volumes:
-      - .:/app # 同样挂载代码目录，以便代码更改时能自动重载
+      - .:/app
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
       - ./shared_media:/app/shared_media
     depends_on:
       - redis
       - db
     env_file:
-      - .env # 同样加载环境变量，以便它能连接到数据库和Redis
+      - .env
+    environment: # <-- 新增：设置时区
+      - TZ=Asia/Shanghai
 
 volumes:
   postgres_data:

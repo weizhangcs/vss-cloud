@@ -70,7 +70,7 @@
     ```
 3.  **推送镜像到仓库**：
     ```bash
-    docker push ghcr.io/YOUR_GITHUB_USERNAME/visify-ss-cloud:latest
+    docker push ghcr.io/YOUR_GITHUB_USERNAME/docker login --username=hi31856213@aliyun.com crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com
     ```
 
 ---
