@@ -59,4 +59,4 @@ conf/gcp-credentials.json
 .DS_Store
 
 # 临时的本地测试
-tests/
+# tests/
