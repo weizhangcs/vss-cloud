@@ -26,10 +26,9 @@ services:
     ports:
       - "8543:8543"
     environment:
-      - POSTGRES_DB=visify_story_studio_db
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - TZ=Asia/Shanghai # <-- 新增：设置时区
+      - TZ=Asia/Shanghai
+    env_file:
+      - .env
 
   redis:
     image: redis:7

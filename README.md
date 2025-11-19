@@ -24,38 +24,58 @@
 
 ---
 
-### 3. 本地开发环境设置
 
-本地开发环境使用 `docker-compose.dev.yml` 进行快速启动和调试。
-
-#### 3.1. 准备工作
-
-1.  **准备配置文件**：在项目根目录下创建 `.env` 文件和 `conf/gcp-credentials.json` 文件。
-2.  **创建共享目录**：创建 `shared_media/resources/tts_references/` 目录，并放入所需的参考音频文件（例如 `zero_shot_prompt.wav`）。
-
-#### 3.2. 首次启动 (Build & Migrate)
-
-1.  **构建镜像并启动服务**：
+### 3. 本地开发环境工作指南 
+ 
+本项目提供了自动化脚本 init.sh 来简化环境的首次配置与引导。日常开发则推荐使用标准的 Docker Compose 命令。 
+ 
+#### 3.1. 首次启动 (Initialization) 
+ 
+适用于刚刚 Clone 项目或重置环境后的第一次运行。 
+ 
+1. 准备必要文件： 
+ * 将 Google Cloud Service Account 凭证放入：conf/gcp-credentials.json 
+ * (可选) 准备 TTS 参考音频：放入 shared_media/resources/tts_references/ 目录。 
+2. 运行引导脚本： 
     ```bash
-    docker-compose -f docker-compose.dev.yml up -d --build
+    chmod +x init.sh 
+    ./init.sh --dev
     ```
-2.  **运行数据库迁移**：
+ 
+ > 脚本功能：自动生成开发环境配置 (.env with DEBUG=True)、启动基础服务、执行数据库迁移、收集静态文件，并交互式引导您创建管理员账号。 
+ 
+#### 3.2. 日常操作 (Daily Routine) 
+ 
+完成初始化后，日常研发请直接使用 Docker Compose 命令，无需重复运行 init.sh。 
+ 
+* 启动服务： 
     ```bash
-    docker-compose -f docker-compose.dev.yml run --rm web python manage.py migrate 
+    docker compose -f docker-compose.dev.yml up -d 
     ```
-3.  **收集静态文件**：
+
+* 停止服务： 
     ```bash
-    docker-compose -f docker-compose.dev.yml run --rm web python manage.py collectstatic --noinput
+    docker compose -f docker-compose.dev.yml down 
     ```
-4.  **创建超级用户**：
+ 
+* 查看实时日志： 
     ```bash
-    docker-compose -f docker-compose.dev.yml run --rm web python manage.py createsuperuser
-    ```
-    *提示：本地访问地址为 `http://localhost:8000/admin/`*
+    docker compose -f docker-compose.dev.yml logs -f
+    ``` 
+ 
+* 数据库变更 (模型修改后)： 
+    ```bash
+    docker compose -f docker-compose.dev.yml run --rm web python manage.py makemigrations 
+    docker compose -f docker-compose.dev.yml run --rm web python manage.py migrate
+    ``` 
+ 
+* 访问入口： 
+ * Web 首页: http://localhost:8001 
+ * 后台管理: http://localhost:8001/admin/
 
 ---
 
-### 4. 镜像管理 (Build & Push)
+#### 3.3. 镜像管理 (Build & Push)
 
 在部署到公网服务器之前，必须构建最终的生产镜像并推送到容器仓库（例如 GHCR）。
 
@@ -66,82 +86,77 @@
 2.  **构建生产镜像并打标签**：
     （`Dockerfile` 中已包含 `collectstatic` 步骤）
     ```bash
-    docker build -t ghcr.io/YOUR_GITHUB_USERNAME/visify-ss-cloud:latest .
+    docker build -t ghcr.io/YOUR_GITHUB_USERNAME/vss-cloud:latest .
     ```
 3.  **推送镜像到仓库**：
     ```bash
-    docker push ghcr.io/YOUR_GITHUB_USERNAME/docker login --username=hi31856213@aliyun.com crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com
+    docker push ghcr.io/YOUR_GITHUB_USERNAME/vss-cloud:latest
     ```
 
 ---
 
-### 5. 生产环境部署指南
 
-生产部署使用 `docker-compose.prod.yml` 文件。
+### 4. 生产环境部署指南 
+ 
+生产部署使用 docker-compose.prod.yml 文件，配合自动化脚本 init.sh 进行标准化交付。 
+ 
+#### 4.1. 部署前准备 
+ 
+1. 凭证文件： 
+ * 必须将 Google Cloud Service Account 密钥放置于：conf/gcp-credentials.json 
+ * (可选) 确保 TTS 参考音频存在于共享目录。 
+2. Nginx 模板： 
+ * 确保 conf/nginx.template.conf 文件存在。 
+3. 拉取镜像： 
+    ```bash
+    docker compose -f docker-compose.prod.yml pull
+    ```
+ 
+ 
+#### 4.2. 首次启动流程 (First-time Deployment) 
+ 
+使用 init.sh 脚本的一键部署模式（Production Mode），它会自动处理密钥生成、环境检查、Nginx 域名配置及服务启动。 
+ 
+1. 执行部署脚本： 
+    ```bash
+    chmod +x init.sh 
+    ./init.sh --prod 
+    ```
+ 
+2. 脚本交互说明： 
+ * 配置生成：脚本会引导您输入服务器域名（用于 Nginx）、GCP Project ID 等关键信息，并自动生成 DEBUG=False 的生产级 .env 文件。 
+ * 管理员设置：交互式创建 Django Superuser。 
+ * 自动化流程：自动执行 migrate（数据库迁移）和 collectstatic（静态文件收集）。 
+ 
+#### 4.3. 增量更新/升级流程 (Maintenance) 
+ 
+当代码库或镜像有更新时，请执行以下标准化运维步骤（无需再次运行 init.sh）： 
+ 
+1. 拉取新镜像： 
+    ```bash
+    docker compose -f docker-compose.prod.yml pull 
+    ``` 
+2. 应用数据库变更（如果有）： 
+    ```bash
+    docker compose -f docker-compose.prod.yml run --rm web python manage.py migrate 
+    ``` 
 
-#### 5.1. 部署前准备
+3. 更新静态文件（如果有前端资源变动）： 
+    ```bash
+    docker compose -f docker-compose.prod.yml run --rm web python manage.py collectstatic --noinput 
+    ``` 
 
-1.  **配置文件**：在服务器项目根目录下手动创建并配置 **`.env`** 和 **`conf/gcp-credentials.json`** 文件（包含生产密钥）。
-    * **`.env` 必须包含 `SERVER_DOMAIN`**，用于 Nginx 动态配置。
-2.  **Nginx 模板**：确保 `nginx.template.conf` 和 `docker-compose.prod.yml` 文件存在。
-3.  **拉取镜像**：
+4. 平滑重启服务： 
     ```bash
-    docker-compose -f docker-compose.prod.yml pull
-    ```
-
-#### 5.2. 首次启动流程
-
-首次启动时，运行以下命令（对应 `deploy.sh` 的逻辑）：
-
-1.  **启动数据库和 Redis**：
-    ```bash
-    docker-compose -f docker-compose.prod.yml up -d db redis
-    ```
-2.  **等待数据库初始化**：
-    ```bash
-    sleep 15
-    ```
-3.  **运行数据库迁移**：
-    ```bash
-    docker-compose -f docker-compose.prod.yml run --rm --no-deps web python manage.py migrate
-    ```
-4.  **收集静态文件**：
-    ```bash
-    docker-compose -f docker-compose.prod.yml run --rm web python manage.py collectstatic --noinput
-    ```    
-5.  **创建超级用户**：
-    ```bash
-    docker-compose -f docker-compose.prod.yml run --rm --no-deps web python manage.py createsuperuser
-    ```
-6.  **启动所有服务** (web, worker, nginx)：
-    ```bash
-    docker-compose -f docker-compose.prod.yml up -d
-    ```
-
-#### 5.3. 增量更新/升级流程 (日常运维)
-
-此流程用于部署新代码版本。
-
-1.  **拉取新镜像**：
-    ```bash
-    docker-compose -f docker-compose.prod.yml pull
-    ```
-2.  **运行迁移 (必须)**：如果新版本有数据库模型更改，此步骤至关重要。
-    ```bash
-    docker-compose -f docker-compose.prod.yml run --rm --no-deps web python manage.py migrate
-    ```
-3.  **收集静态文件**：
-    ```bash
-    docker-compose -f docker-compose.dev.yml run --rm web python manage.py collectstatic --noinput
-    ```    
-4**重启服务**：`web` 和 `worker` 将使用新镜像启动。
-    ```bash
-    docker-compose -f docker-compose.prod.yml up -d
-    ```
+    # 仅重启业务容器 
+    docker compose -f docker-compose.prod.yml up -d --no-deps web worker 
+    # 或者全量重启 
+    docker compose -f docker-compose.prod.yml up -d 
+    ``` 
 
 ---
 
-### 6. Edge 客户端工作流（API）
+### 5. Edge 客户端工作流（API）
 
 Edge 客户端应通过以下步骤与 Cloud API 进行交互：
 

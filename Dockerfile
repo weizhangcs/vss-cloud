@@ -22,4 +22,4 @@ RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r req
 
 COPY . /app/
 
-COPY conf/nginx.template.conf /etc/nginx/conf.d/default.conf.template
+#COPY conf/nginx.template.conf /etc/nginx/conf.d/default.conf.template
