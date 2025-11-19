@@ -91,19 +91,22 @@ class CharacterIdentifier(AIServiceMixin):
         session_start_time = datetime.now()
         try:
             # --- 步骤 1: 环境准备 ---
-            # 加载特定语言的标签和剧本源数据。
-            lang = kwargs.get('lang', 'zh')
+            # [修改点 1] 实现中心化配置优先级逻辑
+            # 优先级: 1. API请求中的 'lang' -> 2. YAML中的 'default_lang' -> 3. 代码兜底 'en'
+            # 注意：kwargs 是 merged 后的结果，包含了 service_params 和 ai_config
+            lang = kwargs.get('lang', kwargs.get('default_lang', 'en'))
+
             self._load_localization_file(self.localization_path, lang)
 
             with enhanced_script_path.open('r', encoding='utf-8') as f:
                 script_data = json.load(f)
 
             # --- 步骤 2: 预处理 ---
-            # 构建一个快速查找索引，了解每个角色在哪些场景中直接出现或被提及。
             direct_scenes, mentioned_scenes = self._build_character_scene_index(script_data)
             all_facts_by_character = defaultdict(list)
             total_usage = {}
-            scene_chunk_size = kwargs.get('scene_chunk_size', 10)
+            # 从 kwargs 中获取 scene_chunk_size，不再硬编码 10
+            scene_chunk_size = kwargs.get('default_scene_chunk_size', 10)
 
             # --- 步骤 3: 核心循环 ---
             # 遍历每一个需要分析的角色。
@@ -146,7 +149,7 @@ class CharacterIdentifier(AIServiceMixin):
 
             # --- 步骤 4: 任务收尾与报告生成 ---
             # 使用注入的 cost_calculator 计算总成本。
-            model_name = kwargs.get('model', 'gemini-1.5-flash-latest')
+            model_name = kwargs.get('model', 'gemini-2.5-flash')
             total_cost = self.cost_calculator.calculate(model_name, total_usage)
             session_duration = (datetime.now() - session_start_time).total_seconds()
 
@@ -201,6 +204,10 @@ class CharacterIdentifier(AIServiceMixin):
         Returns:
             tuple[List[Dict], Dict]: 一个元组，包含识别出的事实列表和本次AI调用的用量信息。
         """
+
+        """
+                为单个角色的一批场景调用AI进行事实识别。
+                """
         chunk_index = kwargs.get('chunk_index', 0)
 
         # 步骤 1: 构建AI上下文（角色专属情报报告）
@@ -232,9 +239,11 @@ class CharacterIdentifier(AIServiceMixin):
             self._save_debug_artifact("prompt.txt", prompt, char_name, chunk_index)
 
         # 步骤 4: 调用AI模型
+        # 从 kwargs 中获取 model 和 temp，不再硬编码
         response_data, usage = self.gemini_processor.generate_content(
-            model_name=kwargs.get('model', 'gemini-1.5-flash-latest'),
-            prompt=prompt, temperature=kwargs.get('temp', 0.1)
+            model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
+            prompt=prompt,
+            temperature=kwargs.get('default_temp', 0.1)
         )
         facts = response_data.get("identified_facts", [])
 

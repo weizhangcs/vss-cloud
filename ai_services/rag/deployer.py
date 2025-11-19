@@ -78,7 +78,7 @@ class RagDeployer:
 
         try:
             # 步骤 1 & 2: 在本地融合数据并生成RAG所需的富文本文件，同时构建GCS的目标URI。
-            gcs_uri = self._fuse_and_prepare_files(
+            gcs_uri, total_scenes = self._fuse_and_prepare_files(
                 source_blueprint_path=blueprint_path,
                 enhanced_facts_path=facts_path,
                 staging_dir=staging_dir,
@@ -108,7 +108,8 @@ class RagDeployer:
             return {
                 "message": "RAG deployment process initiated successfully.",
                 "corpus_name": corpus_display_name,
-                "source_gcs_uri": gcs_uri
+                "source_gcs_uri": gcs_uri,
+                "total_scene_count": total_scenes
             }
 
         except Exception as e:
@@ -133,6 +134,8 @@ class RagDeployer:
                     fact_dict_with_owner = {**fact_dict, "character_name": char_name}
                     all_facts.append(IdentifiedFact(**fact_dict_with_owner))
             self.logger.info("✅ 源数据与增强事实加载并校验成功。")
+            total_scenes = len(blueprint.scenes)
+
         except Exception as e:
             self.logger.error(f"❌ 严重错误: 加载或解析文件时失败。\n   具体错误: {e}", exc_info=True)
             raise
@@ -161,7 +164,7 @@ class RagDeployer:
 
         # 构建并返回GCS的目标URI，用于后续的上传和RAG同步。
         gcs_uri = f"gs://{gcs_bucket_name}/rag-engine-source/{instance_id}/{series_id}"
-        return gcs_uri
+        return gcs_uri, total_scenes
 
     def _upload_dir_to_gcs(self, local_dir: Path, gcs_uri: str):
         """将本地目录中的所有.txt文件上传到指定的GCS路径。"""

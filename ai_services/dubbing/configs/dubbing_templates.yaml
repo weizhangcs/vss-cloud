@@ -1,0 +1,42 @@
+# 模板1: 中文标准配音 (阿里云 CosyVoice)
+chinese_cosyvoice_standard:
+  provider: aliyun_cosyvoice
+  language: zh
+  method: text
+  params:
+    voice: longnan_v2 # 可替换为您喜欢的任何cosyvoice音色
+
+# 模板2: 英文标准配音 (Google WaveNet)
+english_google_wavenet:
+  provider: google_tts
+  language: en
+  method: text
+  params:
+    voice_name: en-US-Wavenet-F # 高质量英文女声
+    # 更多Google TTS参数可在这里添加, 如 speaking_rate, pitch 等
+
+# 升级模板4: 中文语音复刻 (PAI-EAS)
+chinese_paieas_replication:
+  provider: aliyun_paieas
+  language: zh
+  method: replication
+  audio_format: wav
+  # [核心修改] 不再硬编码ID，而是提供源文件信息
+  replication_source:
+    # [重要] 请将此路径替换为您本地参考音频文件的绝对路径
+    audio_path: "resources/tts_references/zero_shot_prompt.wav"
+    # 参考音频对应的文本
+    text: "希望你以后能够做得比我还好哟"
+  params:
+    model: CosyVoice2-0.5B
+    mode: natural_language_replication
+    speed: 1.0
+
+# 模板3: 中文SSML配音 (待实现)
+# chinese_ssml_emotional:
+#   provider: aliyun_cosyvoice
+#   language: zh
+#   method: ssml
+#   pre_processing_model: gemini-1.5-pro
+#   params:
+#     voice: longnan_v2

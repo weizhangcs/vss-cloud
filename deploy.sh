@@ -11,7 +11,6 @@ docker ps --format "{{.Names}}: {{.Status}}"
 docker-compose run --rm --no-deps web python manage.py migrate
 
 # 4. Finish the rest of the setup
-docker-compose run --rm --no-deps web python manage.py collectstatic --noinput
 docker-compose run --rm --no-deps web python manage.py createsuperuser
 
 #docker-compose up -d

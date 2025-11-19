@@ -112,3 +112,53 @@ class TaskResultDownloadView(APIView):
                 {"error": f"Could not retrieve file: {e}"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+
+class GenericFileDownloadView(APIView):
+    """
+    [新增] 允许已认证的边缘实例下载共享 tmp 目录中的任意文件。
+
+    使用查询参数 ?path=... 来指定文件路径。
+    例如: /api/v1/files/download/?path=tmp/dubbing_task_25_audio/narration_000.wav
+    """
+    authentication_classes = [EdgeInstanceAuthentication]
+
+    def get(self, request, *args, **kwargs):
+        # 1. 从查询参数中获取相对路径
+        relative_path_str = request.query_params.get('path')
+        if not relative_path_str:
+            return Response(
+                {"error": "Missing 'path' query parameter."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # 2. 构建绝对路径
+            #    我们只允许从 SHARED_ROOT (即 /app/shared_media) 下载
+            file_path = (settings.SHARED_ROOT / relative_path_str).resolve()
+
+            # 3. [安全检查]
+            #    确保解析后的路径仍然在 SHARED_ROOT 目录内，
+            #    这可以防止路径遍历攻击 (e.g., ?path=../../etc/passwd)
+            shared_root_abs = settings.SHARED_ROOT.resolve()
+            if shared_root_abs not in file_path.parents:
+                return Response(
+                    {"error": "Path traversal detected."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # 4. 检查文件是否存在
+            if not file_path.is_file():
+                raise Http404(f"File not found at: {relative_path_str}")
+
+            # 5. 所有检查通过，提供文件下载
+            response = FileResponse(file_path.open('rb'), as_attachment=True, filename=file_path.name)
+            return response
+
+        except Http404 as e:
+            logger.warning(f"Generic file download failed (Not Found): {e}")
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Generic file download failed (Invalid Path): {e}", exc_info=True)
+            return Response({"error": "Invalid path or file error."}, status=status.HTTP_400_BAD_REQUEST)
+# --- [新增结束] ---

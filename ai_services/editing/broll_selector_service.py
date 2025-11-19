@@ -26,6 +26,7 @@ class BrollSelectorService(AIServiceMixin):
                  prompts_dir: Path,
                  logger: logging.Logger,
                  work_dir: Path,
+                 localization_path: Path,
                  gemini_processor: GeminiProcessor):
         """
         初始化B-Roll选择器服务。
@@ -40,6 +41,7 @@ class BrollSelectorService(AIServiceMixin):
         self.logger = logger
         self.work_dir = work_dir
         self.prompts_dir = prompts_dir
+        self.localization_path = localization_path
         self.gemini_processor = gemini_processor
 
         self.labels = {}  # 由 AIServiceMixin 使用
@@ -76,6 +78,12 @@ class BrollSelectorService(AIServiceMixin):
         Returns:
             Dict[str, Any]: 包含最终剪辑脚本的字典。
         """
+        # [新增] 优先解析语言配置
+        # 优先级: API请求参数 > YAML配置 > 代码硬编码
+        current_lang = kwargs.get('lang', kwargs.get('default_lang', 'en'))
+        # [新增] 2. 加载特定语言的 UI 标签
+        self._load_localization_file(self.localization_path, current_lang)
+
         with dubbing_path.open('r', encoding='utf-8') as f:
             dubbing_data = json.load(f).get("dubbing_script", [])
         with blueprint_path.open('r', encoding='utf-8') as f:
@@ -100,8 +108,12 @@ class BrollSelectorService(AIServiceMixin):
                 self.logger.warning(f"Skipping sequence {i + 1} as no candidate clips could be built.")
                 continue
 
+            # 为了确保覆盖默认值，我们更新 kwargs 或者显式传递
+            call_kwargs = kwargs.copy()
+            call_kwargs['lang'] = current_lang
+
             clip_sequence = self._select_and_adjust_sequence(entry["narration"], target_duration, candidate_pool,
-                                                             **kwargs)
+                                                             **call_kwargs)
 
             final_script.append({
                 "narration": entry["narration"], "narration_duration": target_duration,
@@ -118,12 +130,22 @@ class BrollSelectorService(AIServiceMixin):
             List[Dict]:
         """
         [核心修正] 构建B-roll素材池。
-        新逻辑：对每个场景独立进行对话分组，然后将所有结果合并。
         """
         final_pool = []
 
+        # --- [BUG FIX: 确保场景ID类型一致性] ---
+        # 1. 尝试将所有元素转换为整数，以确保正确的数字排序。
+        #    如果转换失败，则记录错误并返回空列表，防止程序崩溃。
+        try:
+            cleaned_scene_ids = [int(sid) for sid in scene_ids]
+        except (TypeError, ValueError) as e:
+            self.logger.error(f"严重错误: 输入的场景ID列表包含无法转换为整数的元素。原始列表: {scene_ids}", exc_info=True)
+            return []
+        # --- [BUG FIX END] ---
+
         # 1. 遍历每一个关联的场景ID
-        for sid in sorted(scene_ids):
+        for sid in sorted(cleaned_scene_ids):
+            # 将整数ID转换为字符串，用于查找以字符串为键的 scenes_map
             scene = scenes_map.get(str(sid))
             if not scene: continue
 
@@ -177,13 +199,19 @@ class BrollSelectorService(AIServiceMixin):
     def _select_and_adjust_sequence(self, narration_text: str, target_duration: float, candidate_pool: List[Dict],
                                     **kwargs) -> List[Dict]:
         rich_candidate_list = self._build_rich_candidate_list(candidate_pool)
+
+        # [确认] 这里使用的是 kwargs.get('lang', 'zh')
+        # 由于我们在 execute 中已经更新了 kwargs['lang'] 为 current_lang
+        # 这里的逻辑现在是安全的，会正确获取到 'en' (或者 yaml 中的配置)
         prompt = self._build_prompt(
             prompt_name='broll_sequence_selector', lang=kwargs.get('lang', 'zh'),
             narration=narration_text, target_duration=target_duration, rich_candidate_list=rich_candidate_list
         )
         try:
             response_data, _ = self.gemini_processor.generate_content(
-                model_name=kwargs.get('model', 'gemini-1.5-pro-latest'), prompt=prompt, temperature=0.1
+                model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
+                prompt=prompt,
+                temperature=kwargs.get('default_temp', 0.1)
             )
             selected_ids_str = response_data.get("selected_ids", [])
             selected_indices = [int(sid.replace("ID-", "")) for sid in selected_ids_str]
@@ -220,19 +248,29 @@ class BrollSelectorService(AIServiceMixin):
     def _build_rich_candidate_list(self, candidate_pool: list) -> str:
         """
         为 BrollSelectorService 服务，渲染包含片段类型和时长的富文本素材列表。
-
-        Args:
-            candidate_pool (list): 由 _build_coherent_candidate_pool 生成的素材池。
-
-        Returns:
-            str: 格式化后供AI prompt使用的纯文本。
+        [重构] 使用 localized labels 并在单行内展示完整对话内容。
         """
+        # 获取标签，提供英文作为硬编码兜底
+        lbl_no_cand = self.labels.get('no_candidates', '(No candidate clips)')
+        lbl_type_group = self.labels.get('clip_type_group', 'Coherent Dialogue')
+        lbl_type_single = self.labels.get('clip_type_single', 'Single Dialogue')
+        lbl_duration = self.labels.get('duration_label', 'Duration')
+        lbl_summary = self.labels.get('content_summary_label', 'Content Summary')
+
         if not candidate_pool:
-            return "(无候选素材)"
+            return lbl_no_cand
+
         lines = []
         for i, clip in enumerate(candidate_pool):
-            # 注意：这里的标签是硬编码的，如果未来需要国际化，可以从self.labels中获取
-            clip_type = "连贯对话" if clip.get('is_group') else "独立对话"
-            content_summary = clip.get('content', 'N/A').split('\n')[0]  # 只取第一行作为摘要
-            lines.append(f"ID-{i}: [{clip_type}] 时长: {clip.get('duration')}s, 内容摘要: {content_summary}")
+            clip_type = lbl_type_group if clip.get('is_group') else lbl_type_single
+
+            # [核心修复]
+            # 之前：clip.get('content', 'N/A').split('\n')[0] -> 只取第一行
+            # 现在：将换行符替换为 " | " 分隔符，保留所有对话内容，同时保持单行格式方便 AI 阅读
+            raw_content = clip.get('content', 'N/A')
+            content_summary = raw_content.replace('\n', ' | ')
+
+            lines.append(
+                f"ID-{i}: [{clip_type}] {lbl_duration}: {clip.get('duration')}s, {lbl_summary}: {content_summary}"
+            )
         return "\n".join(lines)

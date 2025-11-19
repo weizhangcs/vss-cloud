@@ -21,3 +21,5 @@ RUN mkdir -p /etc/apt/keyrings && \
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
 
 COPY . /app/
+
+COPY conf/nginx.template.conf /etc/nginx/conf.d/default.conf.template

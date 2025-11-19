@@ -11,7 +11,7 @@ from rest_framework import status
 # --- Import your decoupled services and dependencies ---
 from ai_services.analysis.character.character_identifier import CharacterIdentifier
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.common.gemini.cost_calculator_v2 import CostCalculator
+from ai_services.common.gemini.cost_calculator import CostCalculator
 
 # --- Import your new serializer ---
 from .serializers import CharacterIdentifierRequestSerializer

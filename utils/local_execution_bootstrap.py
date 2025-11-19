@@ -24,14 +24,14 @@ def bootstrap_local_env_and_logger(project_root: Path):
     from decouple import config
     mock_settings = SimpleNamespace()
     mock_settings.GEMINI_PRICING = {
-        "gemini-1.5-pro": {
+        "gemini-2.5-pro": {
             "threshold": config('GEMINI_1_5_PRO_THRESHOLD_TOKENS', cast=int, default=128000),
             "standard": {"input": config('GEMINI_1_5_PRO_INPUT_USD_STANDARD', cast=float, default=3.50),
                          "output": config('GEMINI_1_5_PRO_OUTPUT_USD_STANDARD', cast=float, default=10.50)},
             "long": {"input": config('GEMINI_1_5_PRO_INPUT_USD_LONG', cast=float, default=7.00),
                      "output": config('GEMINI_1_5_PRO_OUTPUT_USD_LONG', cast=float, default=21.00)}
         },
-        "gemini-1.5-flash": {
+        "gemini-2.5-flash": {
             "threshold": config('GEMINI_1_5_FLASH_THRESHOLD_TOKENS', cast=int, default=128000),
             "standard": {"input": config('GEMINI_1_5_FLASH_INPUT_USD_STANDARD', cast=float, default=0.075),
                          "output": config('GEMINI_1_5_FLASH_OUTPUT_USD_STANDARD', cast=float, default=0.30)},

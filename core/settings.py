@@ -156,11 +156,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
 LANGUAGE_CODE = 'en'
-
-TIME_ZONE = 'UTC'
-
+TIME_ZONE = 'Asia/Shanghai'
 USE_I18N = True
-
 USE_TZ = True
 
 
@@ -275,32 +272,41 @@ GCS_DEFAULT_BUCKET = config('GCS_DEFAULT_BUCKET', default='')
 # -- 汇率 --
 USD_TO_RMB_EXCHANGE_RATE = config('USD_TO_RMB_EXCHANGE_RATE', cast=float, default=7.25)
 
-# -- 模型定价表 (单位: 美元 / 每百万 tokens) --
+# --- 模型定价表 (单位: 美元 / 每百万 tokens) ---
+# [核心更新]: 移除所有 1.5 模型，统一使用 2.5 系列 Vertex AI 价格
 GEMINI_PRICING = {
-    "gemini-1.5-pro": {
-        "threshold": config('GEMINI_1_5_PRO_THRESHOLD_TOKENS', cast=int, default=128000),
+    # --- 1. Gemini 2.5 Pro (200K Tiers) ---
+    "gemini-2.5-pro": {
+        "threshold": config('GEMINI_2_5_PRO_THRESHOLD_TOKENS', cast=int, default=200000),
         "standard": {
-            "input": config('GEMINI_1_5_PRO_INPUT_USD_STANDARD', cast=float, default=3.50),
-            "output": config('GEMINI_1_5_PRO_OUTPUT_USD_STANDARD', cast=float, default=10.50),
+            "input": config('GEMINI_2_5_PRO_INPUT_USD_STANDARD', cast=float, default=1.25),
+            "output": config('GEMINI_2_5_PRO_OUTPUT_USD_STANDARD', cast=float, default=10.00),
         },
         "long": {
-            "input": config('GEMINI_1_5_PRO_INPUT_USD_LONG', cast=float, default=7.00),
-            "output": config('GEMINI_1_5_PRO_OUTPUT_USD_LONG', cast=float, default=21.00),
+            "input": config('GEMINI_2_5_PRO_INPUT_USD_LONG', cast=float, default=2.50),
+            "output": config('GEMINI_2_5_PRO_OUTPUT_USD_LONG', cast=float, default=15.00),
         }
     },
-    "gemini-1.5-flash": {
-        "threshold": config('GEMINI_1_5_FLASH_THRESHOLD_TOKENS', cast=int, default=128000),
+
+    # --- 2. Gemini 2.5 Flash (Flat Rate) ---
+    "gemini-2.5-flash": {
+        "threshold": config('GEMINI_2_5_FLASH_THRESHOLD_TOKENS', cast=int, default=9999999),  # Flat rate
         "standard": {
-            "input": config('GEMINI_1_5_FLASH_INPUT_USD_STANDARD', cast=float, default=0.075),
-            "output": config('GEMINI_1_5_FLASH_OUTPUT_USD_STANDARD', cast=float, default=0.30),
+            "input": config('GEMINI_2_5_FLASH_INPUT_USD_STANDARD', cast=float, default=0.30),
+            "output": config('GEMINI_2_5_FLASH_OUTPUT_USD_STANDARD', cast=float, default=2.50),
         },
-        "long": {
-            "input": config('GEMINI_1_5_FLASH_INPUT_USD_LONG', cast=float, default=0.15),
-            "output": config('GEMINI_1_5_FLASH_OUTPUT_USD_LONG', cast=float, default=0.60),
-        }
+        # NOTE: Flash 模型无长上下文分层，故不定义 'long' 键
     },
-    # 您可以在这里仿照上面的结构，继续添加 .env 文件中定义的其他模型
-    # 例如 "gemini-2.5-pro-latest" 等
+
+    # --- 3. Gemini 2.5 Flash-Lite (Flat Rate) ---
+    "gemini-2.5-flash-lite": {
+        "threshold": config('GEMINI_2_5_FLASH_LITE_THRESHOLD_TOKENS', cast=int, default=9999999),  # Flat rate
+        "standard": {
+            "input": config('GEMINI_2_5_FLASH_LITE_INPUT_USD_STANDARD', cast=float, default=0.10),
+            "output": config('GEMINI_2_5_FLASH_LITE_OUTPUT_USD_STANDARD', cast=float, default=0.10),
+        },
+        # NOTE: Flash-Lite 模型无长上下文分层
+    },
 }
 
 
@@ -318,3 +324,9 @@ SHARED_LOG_ROOT = SHARED_ROOT / "logs"
 # 在 Django 启动时，确保这些目录存在
 SHARED_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 SHARED_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+
+# ==============================================================================
+# Aliyun PAI-EAS (CosyVoice)
+# ==============================================================================
+PAI_EAS_SERVICE_URL = config('PAI_EAS_SERVICE_URL', default='')
+PAI_EAS_TOKEN = config('PAI_EAS_TOKEN', default='')
