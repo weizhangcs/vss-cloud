@@ -25,7 +25,7 @@ except ImportError as e:
 
 # --- 配置占位符 (请在此处修改为你真实的密钥) ---
 # ⚠️ 替换为你的 GOOGLE_API_KEY
-LIVE_API_KEY = "AIzaSyCmh7R7mvgKCqP4ewUmbkUV9XbkVrT68gk"
+LIVE_API_KEY = ""
 
 # 调试日志将写入这个目录
 LIVE_DEBUG_DIR = project_root / "shared_media" / "logs" / "live_gemini_test_output_v1_final"

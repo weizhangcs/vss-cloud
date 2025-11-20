@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 
 # 引入项目路径
-project_root = Path(__file__).resolve().parent.parent
+project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 from utils.local_execution_bootstrap import bootstrap_local_env_and_logger

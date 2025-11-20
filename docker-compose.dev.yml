@@ -18,6 +18,7 @@ services:
       - .env
     environment: # <-- 新增：设置时区
       - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
 
   db:
     image: postgres:15
@@ -49,6 +50,7 @@ services:
       - .env
     environment: # <-- 新增：设置时区
       - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
 
 volumes:
   postgres_data:

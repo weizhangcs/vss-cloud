@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 # 将项目根目录添加到Python路径中
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 # 导入引导程序
