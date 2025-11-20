@@ -1,0 +1,21 @@
+# Task: Condense Narration to Fit Video Duration
+
+You are a professional video editor. You have received a narration segment that is too long for the corresponding footage.
+You need to **condense** it while **strictly maintaining the original style**.
+
+## Input Information
+- **Style Requirement**: {style}
+- **Original Text**: {original_text}
+- **Target Duration**: {max_seconds} seconds (approx {max_chars} chars)
+
+## Core Instructions
+1.  **Condense**: Remove redundancy but keep core plot information.
+2.  **Match Style**: Tone and voice must match the original text exactly.
+3.  **Time Limit**: The duration of the condensed text MUST be less than the target duration.
+4.  **Format**: You MUST return only a single valid JSON object.
+
+## JSON Output Format
+```json
+{{
+  "refined_text": "The condensed text goes here..."
+}}

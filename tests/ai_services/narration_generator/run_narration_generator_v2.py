@@ -67,57 +67,84 @@ def main():
     test_cases = [
         {
             "name": "Case_A_Deep_Emotion",
-            "desc": "【深情线】聚焦车小小和楚昊轩的前5集感情发展，深情电台风",
+            "desc": "【深情线】聚焦车小小和楚昊轩的前5集感情发展，深情电台风，上帝视角",
             "config": {
                 "lang": "zh",
                 "model": "gemini-2.5-flash",
-                "rag_top_k": 20,  # 获取更多上下文以供筛选
+                "rag_top_k": 20,
                 "control_params": {
-                    "narrative_focus": "romantic_progression",  # 焦点：情感递进
+                    "narrative_focus": "romantic_progression",
                     "scope": {
                         "type": "episode_range",
-                        "value": [1, 5]  # 范围：前5集
+                        "value": [1, 5]
                     },
                     "character_focus": {
                         "mode": "specific",
-                        "characters": ["车小小", "楚昊轩"]  # 角色：仅关注男女主
+                        "characters": ["车小小", "楚昊轩"]
                     },
-                    "style": "emotional"  # 风格：深情细腻
+                    "style": "emotional",
+                    # [新增] 显式指定第三人称
+                    "perspective": "third_person"
                 }
             }
         },
         {
             "name": "Case_B_Suspense_Reveal",
-            "desc": "【悬疑线】聚焦特定场景(10,16,32)的冲突与反转，悬疑解密风",
+            "desc": "【悬疑线】聚焦全剧冲突与反转，悬疑解密风，上帝视角",
             "config": {
                 "lang": "zh",
                 "model": "gemini-2.5-flash",
                 "rag_top_k": 50,
                 "control_params": {
-                    "narrative_focus": "suspense_reveal",  # 焦点：悬疑反转
-                    # 模拟前端传入了具体的 Scene ID 列表 (虽然我们代码里逻辑目前主要处理 episode_range，
-                    # 但 RAG Query 会带上 'scene_selection' 的提示)
+                    "narrative_focus": "suspense_reveal",
                     "scope": {
                         "type": "episode_range",
-                        "value": [1, 30]  # 范围：全剧 (依靠 RAG 语义检索去捞悬疑点)
+                        "value": [1, 30]
                     },
-                    "style": "suspense"  # 风格：悬疑
+                    "style": "suspense",
+                    # [新增] 显式指定第三人称
+                    "perspective": "third_person"
                 }
             }
         },
         {
             "name": "Case_C_Humorous_Roast",
-            "desc": "【毒舌线】全剧高光时刻，幽默吐槽风",
+            "desc": "【毒舌线】全剧高光时刻，幽默吐槽风，上帝视角",
             "config": {
                 "lang": "zh",
                 "model": "gemini-2.5-flash",
                 "rag_top_k": 30,
                 "control_params": {
-                    "narrative_focus": "general",  # 焦点：通用剧情
+                    "narrative_focus": "general",
                     "scope": {
-                        "type": "full"  # 范围：全剧
+                        "type": "full"
                     },
-                    "style": "humorous"  # 风格：幽默吐槽
+                    "style": "humorous",
+                    # [新增] 显式指定第三人称
+                    "perspective": "third_person"
+                }
+            }
+        },
+        {
+            "name": "Case_D_First_Person_POV",
+            "desc": "【第一人称】车小小自述，体验角色沉浸感 (验证变量替换)",
+            "config": {
+                "lang": "zh",
+                "model": "gemini-2.5-flash",
+                "rag_top_k": 30,
+                "control_params": {
+                    "narrative_focus": "character_growth",  # 关注个人成长
+                    "scope": {
+                        "type": "full"
+                    },
+                    "character_focus": {
+                        "mode": "specific",
+                        "characters": ["车小小"]
+                    },
+                    "style": "emotional",  # 深情自述
+                    # [新增] 测试第一人称逻辑
+                    "perspective": "first_person",
+                    "perspective_character": "车小小"  # 必须替换 Prompt 中的 {character}
                 }
             }
         }
