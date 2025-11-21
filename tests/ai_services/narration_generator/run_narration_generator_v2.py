@@ -1,11 +1,16 @@
 # tests/run_narration_generator_v2.py
 # 描述: [终极集成测试] 验证 Narration Generator V2 的全链路编排能力
-#       测试多种参数组合（范围、角色、焦点、风格）对生成结果的影响。
-# 运行方式: python tests/run_narration_generator_v2.py
+#       包含 10+ 个覆盖各种边缘情况和参数组合的测试用例。
+#
+# 用法:
+#   1. 运行所有测试: python tests/run_narration_generator_v2.py
+#   2. 运行特定测试: python tests/run_narration_generator_v2.py --case Case_A_Deep_Emotion
+#   3. 列出所有测试: python tests/run_narration_generator_v2.py --list
 
 import sys
 import json
 import time
+import argparse
 from pathlib import Path
 
 # 将项目根目录添加到Python路径中
@@ -19,26 +24,196 @@ from utils.local_execution_bootstrap import bootstrap_local_env_and_logger
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
 from ai_services.narration.narration_generator_v2 import NarrationGeneratorV2
 
+# ==============================================================================
+# 测试用例定义 (10个典型场景)
+# ==============================================================================
+TEST_CASES = [
+    {
+        "name": "Case_A_Deep_Emotion",
+        "desc": "【深情线】聚焦车小小和楚昊轩的前5集感情发展，深情电台风",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 30,
+            "control_params": {
+                "narrative_focus": "romantic_progression",
+                "scope": {"type": "episode_range", "value": [1, 5]},
+                "character_focus": {"mode": "specific", "characters": ["车小小", "楚昊轩"]},
+                "style": "emotional",
+                "perspective": "third_person"
+            }
+        }
+    },
+    {
+        "name": "Case_B_Suspense_Reveal",
+        "desc": "【悬疑线】全剧范围，聚焦身份揭秘与反转，悬疑解密风",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 60,
+            "control_params": {
+                "narrative_focus": "suspense_reveal",
+                "scope": {"type": "full"},
+                "style": "suspense",
+                "perspective": "third_person"
+            }
+        }
+    },
+    {
+        "name": "Case_C_Humorous_Roast",
+        "desc": "【毒舌线】全剧高光时刻，幽默吐槽风 (时长压力测试)",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 50,
+            "control_params": {
+                "narrative_focus": "general",
+                "scope": {"type": "full"},
+                "style": "humorous",
+                "perspective": "third_person"
+            }
+        }
+    },
+    {
+        "name": "Case_D_First_Person_POV",
+        "desc": "【第一人称】车小小自述，沉浸式人物志",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 40,
+            "control_params": {
+                "narrative_focus": "character_growth",
+                "scope": {"type": "full"},
+                "character_focus": {"mode": "specific", "characters": ["车小小"]},
+                "style": "emotional",
+                "perspective": "first_person",
+                "perspective_character": "车小小"
+            }
+        }
+    },
+    {
+        "name": "Case_E_Short_Video",
+        "desc": "【短视频速看】严格限制1分钟，测试时长控制与精简能力",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 20,
+            "speaking_rate": 4.5,  # 稍微调快语速
+            "control_params": {
+                "narrative_focus": "general",
+                "scope": {"type": "episode_range", "value": [1, 3]},
+                "style": "objective",
+                "target_duration_minutes": 1  # 强约束
+            }
+        }
+    },
+    {
+        "name": "Case_F_Business_Arc",
+        "desc": "【搞事业线】聚焦职场冲突与商业复仇，严肃风格",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 40,
+            "control_params": {
+                "narrative_focus": "business_success",
+                "scope": {"type": "full"},
+                "character_focus": {"mode": "specific", "characters": ["楚昊轩"]},
+                "style": "objective",
+                "perspective": "third_person"
+            }
+        }
+    },
+    {
+        "name": "Case_G_Antagonist_Perspective",
+        "desc": "【反派视角】聚焦女配角宋安娜的心理活动",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 30,
+            "control_params": {
+                "narrative_focus": "general",
+                "scope": {"type": "full"},
+                "character_focus": {"mode": "specific", "characters": ["宋安娜"]},
+                "style": "emotional",
+                "perspective": "third_person"
+            }
+        }
+    },
+    {
+        "name": "Case_H_Mid_Season_Recap",
+        "desc": "【中段剧情回顾】只关注第10-20集，测试范围过滤的准确性",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 40,
+            "control_params": {
+                "narrative_focus": "general",
+                "scope": {"type": "episode_range", "value": [10, 20]},
+                "style": "objective"
+            }
+        }
+    },
+    {
+        "name": "Case_I_English_Narration",
+        "desc": "【英文解说】测试 i18n 支持 (输出英文脚本)",
+        "config": {
+            "lang": "en",  # 切换语言
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 40,
+            "control_params": {
+                "narrative_focus": "romantic_progression",
+                "scope": {"type": "episode_range", "value": [1, 5]},
+                "style": "emotional",
+                "perspective": "third_person"
+            }
+        }
+    },
+    {
+        "name": "Case_J_Long_Summary",
+        "desc": "【长篇深度解说】目标5分钟，全剧深度解析",
+        "config": {
+            "lang": "zh",
+            "model": "gemini-2.5-flash",
+            "rag_top_k": 80,  # 检索更多上下文
+            "control_params": {
+                "narrative_focus": "general",
+                "scope": {"type": "full"},
+                "style": "objective",
+                "target_duration_minutes": 5
+            }
+        }
+    }
+]
+
 
 def main():
-    # 1. 引导环境
+    # 1. 解析命令行参数
+    parser = argparse.ArgumentParser(description="Narration Generator V2 集成测试套件")
+    parser.add_argument("--case", type=str, help="指定运行的测试用例名称 (e.g., Case_A_Deep_Emotion)")
+    parser.add_argument("--list", action="store_true", help="列出所有可用测试用例并退出")
+    args = parser.parse_args()
+
+    # 列出模式
+    if args.list:
+        print("\n📋 可用测试用例列表:")
+        for case in TEST_CASES:
+            print(f"  - {case['name']:<30} : {case['desc']}")
+        return
+
+    # 2. 引导环境
     settings, logger = bootstrap_local_env_and_logger(project_root)
 
-    # 2. 定义路径资源
-    # [输入] 本地蓝图文件 (Stage 2 必需)
+    # 3. 定义资源路径
     blueprint_path = project_root / "shared_media" / "resources" / "tests" / "testdata" / "narrative_blueprint_28099a52_KRe4vd0.json"
-
-    # [配置] 服务所需的元数据目录
-    base_narration_dir = project_root / "ai_services" / "narration"
-    prompts_dir = base_narration_dir / "prompts"
-    metadata_dir = base_narration_dir / "metadata"
+    narration_base = project_root / "ai_services" / "narration"
+    prompts_dir = narration_base / "prompts"
+    metadata_dir = narration_base / "metadata"
     rag_schema_path = project_root / "ai_services" / "rag" / "metadata" / "schemas.json"
 
-    # [输出] 测试结果保存目录
     output_dir = project_root / "shared_media" / "resources" / "tests" / "local_test_result" / "narration_v2"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3. 初始化依赖服务
+    # 4. 初始化服务
     logger.info("正在初始化 GeminiProcessor...")
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
@@ -59,102 +234,28 @@ def main():
         gemini_processor=gemini_processor
     )
 
-    # 4. 定义多样化的测试用例 (Mock 参数组合)
-    # 注意：corpus_display_name 请替换为您 RAG 中真实的语料库名称 (例如 '20251104-Test')
+    # 5. 筛选要运行的测试用例
+    cases_to_run = []
+    if args.case:
+        found = next((c for c in TEST_CASES if c["name"] == args.case), None)
+        if not found:
+            logger.error(f"未找到名称为 '{args.case}' 的测试用例。请使用 --list 查看可用列表。")
+            sys.exit(1)
+        cases_to_run = [found]
+    else:
+        cases_to_run = TEST_CASES
+
+    # 6. 执行测试循环
     RAG_CORPUS_NAME = "20251104-Test"
     SERIES_NAME = "总裁的契约女友"
 
-    test_cases = [
-        {
-            "name": "Case_A_Deep_Emotion",
-            "desc": "【深情线】聚焦车小小和楚昊轩的前5集感情发展，深情电台风，上帝视角",
-            "config": {
-                "lang": "zh",
-                "model": "gemini-2.5-flash",
-                "rag_top_k": 20,
-                "control_params": {
-                    "narrative_focus": "romantic_progression",
-                    "scope": {
-                        "type": "episode_range",
-                        "value": [1, 5]
-                    },
-                    "character_focus": {
-                        "mode": "specific",
-                        "characters": ["车小小", "楚昊轩"]
-                    },
-                    "style": "emotional",
-                    # [新增] 显式指定第三人称
-                    "perspective": "third_person"
-                }
-            }
-        },
-        {
-            "name": "Case_B_Suspense_Reveal",
-            "desc": "【悬疑线】聚焦全剧冲突与反转，悬疑解密风，上帝视角",
-            "config": {
-                "lang": "zh",
-                "model": "gemini-2.5-flash",
-                "rag_top_k": 50,
-                "control_params": {
-                    "narrative_focus": "suspense_reveal",
-                    "scope": {
-                        "type": "episode_range",
-                        "value": [1, 30]
-                    },
-                    "style": "suspense",
-                    # [新增] 显式指定第三人称
-                    "perspective": "third_person"
-                }
-            }
-        },
-        {
-            "name": "Case_C_Humorous_Roast",
-            "desc": "【毒舌线】全剧高光时刻，幽默吐槽风，上帝视角",
-            "config": {
-                "lang": "zh",
-                "model": "gemini-2.5-flash",
-                "rag_top_k": 30,
-                "control_params": {
-                    "narrative_focus": "general",
-                    "scope": {
-                        "type": "full"
-                    },
-                    "style": "humorous",
-                    # [新增] 显式指定第三人称
-                    "perspective": "third_person"
-                }
-            }
-        },
-        {
-            "name": "Case_D_First_Person_POV",
-            "desc": "【第一人称】车小小自述，体验角色沉浸感 (验证变量替换)",
-            "config": {
-                "lang": "zh",
-                "model": "gemini-2.5-flash",
-                "rag_top_k": 30,
-                "control_params": {
-                    "narrative_focus": "character_growth",  # 关注个人成长
-                    "scope": {
-                        "type": "full"
-                    },
-                    "character_focus": {
-                        "mode": "specific",
-                        "characters": ["车小小"]
-                    },
-                    "style": "emotional",  # 深情自述
-                    # [新增] 测试第一人称逻辑
-                    "perspective": "first_person",
-                    "perspective_character": "车小小"  # 必须替换 Prompt 中的 {character}
-                }
-            }
-        }
-    ]
+    logger.info(f"准备执行 {len(cases_to_run)} 个测试用例...")
 
-    # 5. 执行循环测试
-    for case in test_cases:
-        print("\n" + "=" * 60)
-        logger.info(f"🚀 执行测试用例: {case['name']} ({case['desc']})")
-        print("=" * 60)
+    for case in cases_to_run:
+        print("\n" + "=" * 70)
+        logger.info(f"🚀 [Running] {case['name']}")
+        logger.info(f"ℹ️  Description: {case['desc']}")
+        print("=" * 70)
 
         try:
             start_time = time.time()
@@ -167,29 +268,35 @@ def main():
             )
 
             duration = time.time() - start_time
-
-            # 6. 打印结果摘要
             script = result.get("narration_script", [])
-            logger.info(f"✅ 生成完成 (耗时: {duration:.2f}s). 包含 {len(script)} 段解说。")
 
-            print("\n--- 📝 解说词预览 (Top 1) ---")
+            # 统计 Refine 情况
+            refined_count = sum(1 for s in script if s.get("metadata", {}).get("refined"))
+
+            logger.info(f"✅ 执行成功 (耗时: {duration:.2f}s)")
+            logger.info(f"📊 产出统计: {len(script)} 段解说 | {refined_count} 段触发了缩写优化")
+
+            print("\n--- 📝 预览 (首段) ---")
             if script:
-                first_entry = script[0]
-                print(f"内容: {first_entry.get('narration')}")
-                print(f"溯源: Scene IDs {first_entry.get('source_scene_ids')}")
+                first = script[0]
+                print(f"Text: {first.get('narration')[:100]}...")
+                print(f"Source: {first.get('source_scene_ids')}")
             else:
-                print("(无生成内容 - 可能被过滤为空)")
+                print("(无内容生成)")
 
-            # 7. 保存独立的结果文件
+            # 保存结果
             save_path = output_dir / f"result_{case['name']}.json"
             with save_path.open("w", encoding="utf-8") as f:
                 json.dump(result, f, indent=2, ensure_ascii=False)
-            logger.info(f"结果已保存至: {save_path}")
+            logger.info(f"💾 结果已保存: {save_path.name}")
 
         except Exception as e:
             logger.error(f"❌ 用例 {case['name']} 执行失败: {e}", exc_info=True)
 
-        print("\n" + "-" * 60 + "\n")
+        # 稍微停顿，避免 API Rate Limit
+        time.sleep(1)
+
+    print("\n✨ 所有计划测试已完成。")
 
 
 if __name__ == "__main__":

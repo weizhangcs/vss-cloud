@@ -16,18 +16,22 @@ Read the following organized plot materials and use them as the factual basis fo
 ---
 
 ## Core Rules & Output Format
-1.  **Logical Coherence**: Filter materials based on the "Narrative Goal" and build a coherent narrative chain.
-2.  **Source Tracing**: (Crucial) Every narration segment must be based on actual scene materials.
-    * **STRICTLY FORBIDDEN**: Do NOT include any citation markers (e.g., "(Source: ...)", "(Scene 10)") inside the `narration` text. **The `narration` field must be pure text ready for reading.**
-    * Identify the source Scene IDs accurately and fill them into the `source_scene_ids` array in the JSON object.
-3.  **JSON Output**: You **MUST** return only a single, strictly valid JSON object.
+1.  **Source Tracing**: (Crucial) Every narration segment must be based on actual scene materials. Accurately identify source Scene IDs and fill them into the `source_scene_ids` array.
+2.  **Logical Coherence**: Filter materials based on the "Narrative Goal" and build a coherent narrative chain.
+3.  **Language Standard**: Ensure the output strictly matches the specified language requirements.
+4.  **Pure Audio-Ready Text**:
+    * **NO Citation Markers**: Do NOT include markers like `[5]`, `(Scene 10)`, or `(Source:...)` inside the `narration` text.
+    * **NO Stage Directions**: Do NOT include sound effects, music cues, or action indicators in parentheses (e.g., `(Opening music)`, `(Laughs)`). The text must be ready for Text-to-Speech engines.
+    * *Allowed*: Descriptive storytelling (e.g., "The night was dark and the atmosphere in the cafe was tense.").
+    * *Forbidden*: Script-style directions (e.g., "(Cut to cafe, tense atmosphere)").
+5.  **JSON Output**: You **MUST** return only a single, strictly valid JSON object.
 
 **Output Format Definition:**
 ```json
 {{
   "narration_script": [
     {{
-      "narration": "(String) A complete, cohesive segment of narrative commentary text. NOTE: Do not include any source markers here.",
+      "narration": "(String) A clean text segment ready for dubbing. NO brackets [] or parentheses () with meta-info.",
       "source_scene_ids": [
         "(Integer Array) The corresponding source Scene IDs"
       ]

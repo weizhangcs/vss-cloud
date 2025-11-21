@@ -13,7 +13,8 @@
     },
     "character": {
       "specific": "请特别提取与角色“{chars}”直接相关的戏份和互动。"
-    }
+    },
+    "duration_constraint": "注意：请控制解说词的整体篇幅，使其对应的视频总时长约为 {minutes} 分钟。"
   },
   "en": {
     "focus": {
@@ -29,6 +30,7 @@
     },
     "character": {
       "specific": "Please specifically extract scenes and interactions directly related to the characters \"{chars}\"."
-    }
+    },
+    "duration_constraint": "Note: Please control the overall length of the commentary so that the corresponding video duration is approximately {minutes} minutes."
   }
 }

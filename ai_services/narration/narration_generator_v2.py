@@ -1,3 +1,5 @@
+# ai_services/narration/narration_generator_v2.py
+
 import json
 import logging
 from pathlib import Path
@@ -7,19 +9,28 @@ from typing import Dict, Any, List
 import vertexai
 from vertexai import rag
 
+# 基础组件
 from ai_services.common.gemini.ai_service_mixin import AIServiceMixin
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
 from ai_services.rag.schemas import load_i18n_strings
+
+# V2 核心组件
 from .query_builder import NarrationQueryBuilder
 from .context_enhancer import ContextEnhancer
-# [新增] 导入校验器
 from .validator import NarrationValidator
 
 
 class NarrationGeneratorV2(AIServiceMixin):
+    """
+    [V2] 智能解说词生成服务。
+
+    架构特点:
+        采用 "Query -> Enhance -> Synthesize -> Refine" 四段式流水线。
+        支持有目的检索、本地上下文增强、风格化生成以及基于时长的自动缩写校验。
+    """
     SERVICE_NAME = "narration_generator"
 
-    # 最大重试次数，防止死循环
+    # 最大重试缩写次数，防止死循环
     MAX_REFINE_RETRIES = 2
 
     def __init__(self,
@@ -40,18 +51,19 @@ class NarrationGeneratorV2(AIServiceMixin):
         self.work_dir = work_dir
         self.gemini_processor = gemini_processor
 
+        # 初始化 Vertex AI
         vertexai.init(project=self.project_id, location=self.location)
-        load_i18n_strings(rag_schema_path)
 
+        # 加载全局资源
+        load_i18n_strings(rag_schema_path)
         self.styles_config = self._load_json_config("styles.json")
         self.perspectives_config = self._load_json_config("perspectives.json")
         self.query_templates = self._load_json_config("query_templates.json")
-        # [新增] 加载优化模版
-        self.refine_templates = self._load_json_config("refine_templates.json")
 
         self.logger.info("NarrationGeneratorV2 initialized (Full Configuration).")
 
     def _load_json_config(self, filename: str) -> Dict:
+        """加载 metadata 目录下的 JSON 配置文件"""
         path = self.metadata_dir / filename
         if path.is_file():
             with path.open("r", encoding="utf-8") as f:
@@ -59,6 +71,7 @@ class NarrationGeneratorV2(AIServiceMixin):
         return {}
 
     def _get_rag_corpus(self, corpus_display_name: str) -> Any:
+        """根据显示名称获取 RAG Corpus 引用"""
         corpora = rag.list_corpora()
         corpus = next((c for c in corpora if c.display_name == corpus_display_name), None)
         if not corpus:
@@ -70,11 +83,14 @@ class NarrationGeneratorV2(AIServiceMixin):
                 corpus_display_name: str,
                 blueprint_path: Path,
                 config: Dict[str, Any]) -> Dict[str, Any]:
-
+        """
+        执行 V2 生成流程主入口。
+        """
         self.logger.info(f"Starting V2 Generation for: {series_name}")
 
-        # --- Stage 1: Intent-Based Retrieval ---
-        # (保持不变)
+        # ==================================================================
+        # Stage 1: Intent-Based Retrieval (有目的检索)
+        # ==================================================================
         qb = NarrationQueryBuilder(self.metadata_dir, self.logger)
         query = qb.build(series_name, config)
 
@@ -89,8 +105,9 @@ class NarrationGeneratorV2(AIServiceMixin):
         )
         raw_chunks = retrieval_response.contexts.contexts
 
-        # --- Stage 2: Context Enhancement ---
-        # (保持不变)
+        # ==================================================================
+        # Stage 2: Context Enhancement (本地时序增强)
+        # ==================================================================
         enhancer = ContextEnhancer(blueprint_path, self.logger)
         enhanced_context = enhancer.enhance(raw_chunks, config)
 
@@ -98,36 +115,42 @@ class NarrationGeneratorV2(AIServiceMixin):
             self.logger.warning("Context enhancement resulted in empty content.")
             return {"narration_script": [], "metadata": {"status": "empty_context"}}
 
-        # --- Stage 3: Synthesis (4-Slot Assembly) ---
-        # (保持不变，增加了 target_duration_minutes 的注入)
+        # ==================================================================
+        # Stage 3: Synthesis (风格化合成)
+        # ==================================================================
         lang = config.get("lang", "zh")
         control = config.get("control_params", {})
 
+        # 3.1 组装 Perspective (视角)
         perspective_key = control.get("perspective", "third_person")
-        persp_templates = self.perspectives_config.get(lang, {})
+        persp_templates = self.perspectives_config.get(lang, self.perspectives_config.get("en", {}))
         perspective_text = persp_templates.get(perspective_key, persp_templates.get("third_person", ""))
 
         if perspective_key == "first_person":
             char_name = control.get("perspective_character", "主角")
             perspective_text = perspective_text.replace("{character}", char_name)
 
+        # 3.2 组装 Style (风格)
         style_key = control.get("style", "objective")
-        style_templates = self.styles_config.get(lang, {})
+        style_templates = self.styles_config.get(lang, self.styles_config.get("en", {}))
         style_text = style_templates.get(style_key, style_templates.get("objective", ""))
 
+        # 3.3 组装 Narrative Focus (叙事目标)
         focus_key = control.get("narrative_focus", "general")
-        focus_templates = self.query_templates.get(lang, {}).get("focus", {})
+        query_lang_pack = self.query_templates.get(lang, self.query_templates.get("en", {}))
+        focus_templates = query_lang_pack.get("focus", {})
         focus_desc = focus_templates.get(focus_key, focus_templates.get("general", ""))
         narrative_focus_text = focus_desc.replace("{series_name}", series_name)
 
-        # [新增] 总时长控制注入
-        # 如果配置了 target_duration，我们将其追加到 narrative_focus 中，作为对整体长度的软约束
+        # [注入] 总时长控制 (Duration Constraint)
         target_duration_min = control.get("target_duration_minutes")
         if target_duration_min:
-            narrative_focus_text += f"\n注意：请控制解说词的整体篇幅，使其对应的视频总时长约为 {target_duration_min} 分钟。"
+            duration_tpl = query_lang_pack.get("duration_constraint", "")
+            if duration_tpl:
+                narrative_focus_text += "\n" + duration_tpl.format(minutes=target_duration_min)
 
+        # 3.4 组装最终 Prompt
         base_prompt_template = self._load_prompt_template(lang, "narration_generator")
-
         final_prompt = base_prompt_template.format(
             perspective=perspective_text,
             style=style_text,
@@ -136,7 +159,6 @@ class NarrationGeneratorV2(AIServiceMixin):
         )
 
         self.logger.info(f"Invoking Gemini [Style: {style_key}, Perspective: {perspective_key}]...")
-
         response_data, usage = self.gemini_processor.generate_content(
             model_name=config.get("model", "gemini-2.5-flash"),
             prompt=final_prompt,
@@ -145,12 +167,15 @@ class NarrationGeneratorV2(AIServiceMixin):
 
         initial_script = response_data.get("narration_script", [])
 
-        # --- Stage 4: Validation & Refinement (NEW) ---
-        # 加载蓝图数据用于校验
+        # ==================================================================
+        # Stage 4: Validation & Refinement (校验与精调)
+        # ==================================================================
         with blueprint_path.open('r', encoding='utf-8') as f:
             blueprint_data = json.load(f)
 
         validator = NarrationValidator(blueprint_data, config, self.logger)
+
+        # 执行校验循环
         refined_script = self._validate_and_refine(
             initial_script, validator, config, style_text, lang
         )
@@ -160,18 +185,18 @@ class NarrationGeneratorV2(AIServiceMixin):
             "series_name": series_name,
             "config_snapshot": config,
             "narration_script": refined_script,
-            "ai_total_usage": usage  # 注意：Refine 产生的 usage 暂时未合并进来，建议在 _validate_and_refine 中累加
+            "ai_total_usage": usage
         }
 
     def _validate_and_refine(self, script: List[Dict], validator: NarrationValidator,
                              config: Dict, style_text: str, lang: str) -> List[Dict]:
         """
-        [Stage 4] 对生成的脚本进行逐条校验，如果超长则调用 AI 进行缩写。
+        逐条校验生成的脚本，若时长溢出则调用 AI 进行缩写。
         """
         self.logger.info(f"Starting Stage 4: Validation & Refinement for {len(script)} snippets...")
         final_script = []
 
-        # [修改] 加载专门的 .txt 模板
+        # 加载缩写专用的 .txt 模版
         refine_template = self._load_prompt_template(lang, "narration_refine")
 
         for index, snippet in enumerate(script):
@@ -188,12 +213,11 @@ class NarrationGeneratorV2(AIServiceMixin):
             # 计算目标字数上限
             max_allowed_chars = int(info["real_visual_duration"] * validator.speaking_rate)
 
-            # [修复] 初始化状态变量，防止 UnboundLocalError
             is_valid_now = False
 
+            # 进入重试循环
             for attempt in range(self.MAX_REFINE_RETRIES):
                 try:
-                    # [修改] 使用 .format 填充 .txt 模板
                     refine_prompt = refine_template.format(
                         style=style_text,
                         original_text=current_text,
@@ -201,18 +225,18 @@ class NarrationGeneratorV2(AIServiceMixin):
                         max_chars=max_allowed_chars
                     )
 
-                    # 调用 AI (注意：Prompt 中已经包含了 JSON 格式要求)
+                    # 调用 AI (Prompt 中已包含 JSON 格式要求)
                     refine_response_json, _ = self.gemini_processor.generate_content(
                         model_name=config.get("model", "gemini-2.5-flash"),
                         prompt=refine_prompt,
-                        temperature=0.3
+                        temperature=0.3  # 低温以确保遵循约束
                     )
 
                     new_text = refine_response_json.get("refined_text", "")
                     if not new_text:
                         raise ValueError("Empty refinement result from LLM")
 
-                    # 再次校验
+                    # 再次校验新文本
                     snippet["narration"] = new_text
                     is_valid_now, new_info = validator.validate_snippet(snippet)
 
@@ -221,27 +245,24 @@ class NarrationGeneratorV2(AIServiceMixin):
                         snippet["metadata"] = new_info
                         snippet["metadata"]["refined"] = True
                         final_script.append(snippet)
-                        break  # 成功，跳出重试循环
+                        break
                     else:
                         self.logger.warning(
                             f"Refinement attempt {attempt + 1} failed: Still overflow ({new_info['overflow_sec']}s).")
-                        current_text = new_text  # 用新的（虽然还是长的）文本继续尝试缩写
-                        # 更新 info 供最后兜底使用
+                        # 更新状态，准备下一次重试
+                        current_text = new_text
                         info = new_info
 
                 except Exception as e:
                     self.logger.error(f"Error during refinement attempt {attempt + 1}: {e}")
-                    # 异常发生时，继续下一次重试，或者退出循环
-                    # 不要 break，给下一次重试机会
 
-            # [逻辑闭环] 如果重试耗尽（或全报错）仍未成功
+            # 如果重试耗尽仍未通过，保留最后一次结果并标记错误
             if not is_valid_now:
                 self.logger.error(
-                    f"Snippet {index} failed refinement after {self.MAX_REFINE_RETRIES} retries (or errors). Keeping original/last version.")
-                # 无论如何，保留当前的 text (可能是原始的，也可能是缩写了一半的)
+                    f"Snippet {index} failed refinement after {self.MAX_REFINE_RETRIES} retries. Keeping last version.")
                 snippet["metadata"] = info
                 snippet["metadata"]["validation_error"] = "Duration Overflow"
-                # 标记虽然失败但尝试过
+                # 确保 narration 字段存的是最后一次尝试的文本
                 if current_text != snippet["narration"]:
                     snippet["narration"] = current_text
                 final_script.append(snippet)
