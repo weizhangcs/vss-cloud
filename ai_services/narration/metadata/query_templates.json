@@ -1,0 +1,36 @@
+{
+  "zh": {
+    "focus": {
+      "general": "剧集“{series_name}”的完整剧情发展，包括主要冲突、高潮和结局。",
+      "romantic_progression": "剧集“{series_name}”中男女主角的情感发展脉络，包括初识、误会、冲突、升温和最终结局。",
+      "business_success": "剧集“{series_name}”中主角如何克服职场困难，完成商业复仇或取得成功的关键事件。",
+      "suspense_reveal": "剧集“{series_name}”中埋藏最大的悬念、秘密线索，以及最终的反转真相。",
+      "character_growth": "剧集“{series_name}”中主角个人的成长弧光，性格转变的关键节点。"
+    },
+    "scope": {
+      "episode_range": "请重点关注第 {start} 集到第 {end} 集之间的剧情。",
+      "scene_selection": "请重点关注指定场景列表中的剧情细节。"
+    },
+    "character": {
+      "specific": "请特别提取与角色“{chars}”直接相关的戏份和互动。"
+    },
+    "duration_constraint": "注意：请控制解说词的整体篇幅，使其对应的视频总时长约为 {minutes} 分钟。"
+  },
+  "en": {
+    "focus": {
+      "general": "The complete plot development of the series \"{series_name}\", including major conflicts, climaxes, and endings.",
+      "romantic_progression": "The emotional development trajectory between the male and female leads in \"{series_name}\", including first meetings, misunderstandings, conflicts, escalating affection, and the final outcome.",
+      "business_success": "Key events in \"{series_name}\" where the protagonist overcomes career difficulties, achieves business vengeance, or attains success.",
+      "suspense_reveal": "The biggest suspense and secret clues buried in \"{series_name}\", as well as the ultimate revealing truth.",
+      "character_growth": "The personal growth arc of the protagonist in \"{series_name}\" and key turning points in their personality."
+    },
+    "scope": {
+      "episode_range": "Please focus specifically on the plot between episode {start} and episode {end}.",
+      "scene_selection": "Please focus specifically on plot details within the specified list of scenes."
+    },
+    "character": {
+      "specific": "Please specifically extract scenes and interactions directly related to the characters \"{chars}\"."
+    },
+    "duration_constraint": "Note: Please control the overall length of the commentary so that the corresponding video duration is approximately {minutes} minutes."
+  }
+}

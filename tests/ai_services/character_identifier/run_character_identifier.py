@@ -12,20 +12,20 @@ sys.path.append(str(project_root))
 from utils.local_execution_bootstrap import bootstrap_local_env_and_logger
 from ai_services.analysis.character.character_identifier import CharacterIdentifier
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.common.gemini.cost_calculator_v2 import CostCalculator
+from ai_services.common.gemini.cost_calculator import CostCalculator
 
 def main():
     settings, logger = bootstrap_local_env_and_logger(project_root)
 
     # --- [执行层的职责] 1. 定义所有路径 ---
-    input_blueprint_path = project_root / "tests" / "testdata" / "narrative_blueprint_28099a52_KRe4vd0.json"
-    output_dir = project_root / "output" / "character_facts"
+    input_blueprint_path = project_root / "shared_media" / "resources" / "tests" / "testdata" / "narrative_blueprint_28099a52_KRe4vd0.json"
+    output_dir = project_root / "shared_media" / "resources" / "tests" / "local_test_result" / "character_facts"
     output_dir.mkdir(parents=True, exist_ok=True)
     prompts_dir = project_root / 'ai_services' / 'analysis' / 'character' / 'prompts'
 
     # [执行层的职责] 加载业务所需的额外配置文件
-    localization_path = project_root / "resource" / "localization" / "analysis" / "character_identifier.json"
-    schema_path = project_root / "resource" / "metadata" / "fact_attributes.json"
+    localization_path = project_root / 'ai_services' / 'analysis' / 'character' / "localization" / "character_identifier.json"
+    schema_path = project_root / 'ai_services' / 'analysis' / 'character' / "metadata" / "fact_attributes.json"
 
     characters_to_analyze = ["车小小"]
     language_to_use = "zh"

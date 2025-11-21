@@ -1,28 +1,39 @@
 # Task: Generate Narrative Commentary with Source Tracing based on RAG Data
 
-You are a top-tier film and TV commentator with an objective and concise style, skilled at weaving scattered scene information into a smooth, engaging third-party narrative.
+## 1. Perspective Setting
+{perspective}
 
-Your task is to read the following relevant scene materials retrieved via RAG for a short drama series and generate a complete narrative commentary script.
+## 2. Style & Tone
+{style}
 
-## RAG Retrieved Scene Materials
+## 3. Narrative Goal
+{narrative_focus}
+
+## 4. Reference Materials (RAG Context)
+Read the following organized plot materials and use them as the factual basis for creation:
 ---
 {rag_context}
 ---
 
 ## Core Rules & Output Format
-1.  **Global Perspective**: Your commentary must be coherent and complete, clearly restoring the main storyline.
-2.  **Objective Neutrality**: Narrate from a third-party perspective; do not adopt the subjective emotions of any character.
-3.  **Source Tracing**: This is the most important rule. Every segment of commentary you generate MUST be traceable to its information source.
-4.  **JSON Output**: You **MUST** return only a single, strictly valid JSON object. The top-level key is "narration_script", and its value is an array of objects.
+1.  **Source Tracing**: (Crucial) Every narration segment must be based on actual scene materials. Accurately identify source Scene IDs and fill them into the `source_scene_ids` array.
+2.  **Logical Coherence**: Filter materials based on the "Narrative Goal" and build a coherent narrative chain.
+3.  **Language Standard**: Ensure the output strictly matches the specified language requirements.
+4.  **Pure Audio-Ready Text**:
+    * **NO Citation Markers**: Do NOT include markers like `[5]`, `(Scene 10)`, or `(Source:...)` inside the `narration` text.
+    * **NO Stage Directions**: Do NOT include sound effects, music cues, or action indicators in parentheses (e.g., `(Opening music)`, `(Laughs)`). The text must be ready for Text-to-Speech engines.
+    * *Allowed*: Descriptive storytelling (e.g., "The night was dark and the atmosphere in the cafe was tense.").
+    * *Forbidden*: Script-style directions (e.g., "(Cut to cafe, tense atmosphere)").
+5.  **JSON Output**: You **MUST** return only a single, strictly valid JSON object.
 
 **Output Format Definition:**
 ```json
 {{
   "narration_script": [
     {{
-      "narration": "(String) A complete, cohesive segment of narrative commentary text.",
+      "narration": "(String) A clean text segment ready for dubbing. NO brackets [] or parentheses () with meta-info.",
       "source_scene_ids": [
-        "(Integer Array) The IDs of one or more core scenes upon which this commentary segment is based. Be sure to extract them accurately from the materials."
+        "(Integer Array) The corresponding source Scene IDs"
       ]
     }}
   ]

@@ -1,0 +1,8 @@
+{
+  "zh": {
+    "shorten_instruction": "【指令：缩写修正】\n上一轮生成的解说词片段过长，超出了对应画面的时长限制。\n请在**严格保持原有解说风格（{style}）**的前提下，对该片段进行**缩写**。\n\n原片段：{original_text}\n\n约束条件：\n1. 必须保留核心信息。\n2. 预估语速下，朗读时长必须控制在 {max_seconds} 秒以内（约 {max_chars} 字）。\n3. 直接输出缩写后的文本，不要包含任何解释。",
+  },
+  "en": {
+    "shorten_instruction": "[Instruction: Condense]\nThe previous narration segment is too long for the footage duration.\nPlease **condense** it while **strictly maintaining the original style ({style})**.\n\nOriginal: {original_text}\n\nConstraints:\n1. Keep core information.\n2. Duration must be under {max_seconds} seconds (approx {max_chars} chars).\n3. Output only the condensed text.",
+  }
+}

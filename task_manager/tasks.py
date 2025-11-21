@@ -20,7 +20,7 @@ from ai_services.analysis.character.character_identifier import CharacterIdentif
 from ai_services.analysis.character.character_metrics_calculator import CharacterMetricsCalculator
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
 from ai_services.common.gemini.cost_calculator import CostCalculator
-from ai_services.narration.narration_generator import NarrationGenerator
+from ai_services.narration.narration_generator_v2 import NarrationGeneratorV2
 from ai_services.editing.broll_selector_service import BrollSelectorService
 
 import yaml # <-- [新增]
@@ -92,41 +92,56 @@ def execute_cloud_native_task(task_id):
 
 def _handle_narration_generation(task: Task) -> dict:
     """
-    [重构后] 处理“生成解说词”任务的核心逻辑。
+    [V2 重构版] 处理“生成解说词”任务。
+    集成 NarrationGeneratorV2 (Query-Enhance-Synthesize 架构)。
     """
-    logger.info(f"Starting NARRATION GENERATION for Task ID: {task.id}...")
+    logger.info(f"Starting NARRATION GENERATION (V2) for Task ID: {task.id}...")
 
     payload = task.payload
     series_name = payload.get("series_name")
     series_id = payload.get("series_id")
-    total_scene_count = payload.get("total_scene_count")
-    service_params = payload.get("service_params", {})
-    output_file_path_str = payload.get("absolute_output_path")  # 由 View 注入
+    output_file_path_str = payload.get("absolute_output_path")
 
-    if not total_scene_count or not isinstance(total_scene_count, int):
-        # 如果 payload 中没有，抛出异常，强制上游编排器修复
-        raise ValueError(
-            "Payload is missing 'total_scene_count' or it is not an integer. RAG deployment must precede this.")
-    if not all([series_name, series_id, output_file_path_str]):
-        raise ValueError(
-            "Payload for GENERATE_NARRATION is missing required keys: series_name, series_id, absolute_output_path.")
+    # [新增] V2 必须依赖蓝图文件进行上下文增强
+    # 客户端创建任务时，必须在 payload 中提供 'blueprint_path'
+    blueprint_path_str = payload.get("absolute_blueprint_path")
 
-    # --- [新增] 1. 加载 AI 推理配置 ---
+    if not all([series_name, series_id, output_file_path_str, blueprint_path_str]):
+        raise ValueError(
+            "Payload for GENERATE_NARRATION is missing required keys: "
+            "series_name, series_id, absolute_output_path, or absolute_blueprint_path."
+        )
+
+    blueprint_path = Path(blueprint_path_str)
+    if not blueprint_path.is_file():
+        raise FileNotFoundError(f"Blueprint file not found at: {blueprint_path}")
+
+    # --- 1. 准备配置 (Merge Default YAML + User Params) ---
     config_path = settings.BASE_DIR / 'ai_services' / 'configs' / 'ai_inference_config.yaml'
     try:
         with config_path.open('r', encoding='utf-8') as f:
             ai_config_full = yaml.safe_load(f)
-        # 提取 narration_generator 块的默认值
-        ai_config = ai_config_full.get('narration_generator', {})
-    except FileNotFoundError:
-        logger.error(f"AI 配置 YAML 文件未找到: {config_path}")
-        raise
-    except KeyError:
-        logger.error(f"AI 配置 YAML 文件中缺少 'narration_generator' 块。")
-        raise
-    # --- [新增结束] ---
+        default_config = ai_config_full.get('narration_generator', {})
+    except Exception as e:
+        logger.warning(f"Failed to load AI config from YAML: {e}. Using empty defaults.")
+        default_config = {}
 
-    logger.info("Assembling dependencies for NarrationGenerator service...")
+    # 获取用户传入的参数
+    user_params = payload.get("service_params", {})
+
+    # [策略] 深度合并配置
+    # 注意：V2 的 config 结构较为复杂（包含 control_params），简单的 update 可能不够
+    # 但为了保持简单，我们假设用户传的是完整的 control_params 覆盖
+    final_config = default_config.copy()
+    final_config.update(user_params)
+
+    # 确保 lang 存在，供 V2 内部使用
+    if 'lang' not in final_config:
+        final_config['lang'] = 'zh'  # 默认中文
+
+    logger.info(f"Final V2 Config: {json.dumps(final_config, ensure_ascii=False)}")
+
+    # --- 2. 实例化 V2 服务 ---
     instance_id = task.organization.name
     corpus_display_name = f"{series_id}-{instance_id}"
 
@@ -134,43 +149,40 @@ def _handle_narration_generation(task: Task) -> dict:
         api_key=settings.GOOGLE_API_KEY,
         logger=logger,
         debug_mode=settings.DEBUG,
-        # [修改] 调试日志应转到 LOG_ROOT
         debug_dir=settings.SHARED_LOG_ROOT / f"narration_task_{task.id}_debug"
     )
 
-    narration_service = NarrationGenerator(
+    # 定义 V2 所需的元数据路径
+    narration_base = settings.BASE_DIR / 'ai_services' / 'narration'
+
+    generator_v2 = NarrationGeneratorV2(
         project_id=settings.GOOGLE_CLOUD_PROJECT,
         location=settings.GOOGLE_CLOUD_LOCATION,
-        prompts_dir=settings.BASE_DIR / 'ai_services' / 'narration' / 'prompts',
+        prompts_dir=narration_base / 'prompts',
+        metadata_dir=narration_base / 'metadata',  # V2 新增
+        rag_schema_path=settings.BASE_DIR / 'ai_services' / 'rag' / 'metadata' / 'schemas.json',  # V2 新增
         logger=logger,
-        # [不变] 工作目录应转到 TMP_ROOT
         work_dir=settings.SHARED_TMP_ROOT / f"narration_task_{task.id}_workspace",
         gemini_processor=gemini_processor
     )
 
-    # --- [修改] 2. 合并配置并调用服务 ---
-    # 默认配置 (ai_config) 复制，然后用用户参数 (service_params) 覆盖，确保用户传入的参数优先级最高
-    final_params = ai_config.copy()
-    final_params.update(service_params)
-    logger.info(f"Final AI inference parameters: {final_params}")
-
-    result_data = narration_service.execute(
+    # --- 3. 执行生成 ---
+    result_data = generator_v2.execute(
         series_name=series_name,
         corpus_display_name=corpus_display_name,
-        total_scene_count=total_scene_count,
-        **final_params  # <-- 传入合并后的参数
+        blueprint_path=blueprint_path,
+        config=final_config
     )
 
-    # [不变] View 提供了正确的 'absolute_output_path' (在 TMP_ROOT 中)
+    # --- 4. 保存结果 ---
     output_file_path = Path(output_file_path_str)
     with output_file_path.open('w', encoding='utf-8') as f:
         json.dump(result_data, f, ensure_ascii=False, indent=2)
 
-    logger.info(f"NARRATION GENERATION finished. Output saved to: {output_file_path}")
+    logger.info(f"NARRATION GENERATION (V2) finished. Output saved to: {output_file_path}")
 
     return {
-        "message": "Narration script generated successfully.",
-        # [修改] 返回相对于 SHARED_ROOT 的路径
+        "message": "Narration script generated successfully (V2 Engine).",
         "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
         "usage_report": result_data.get("ai_total_usage", {})
     }
