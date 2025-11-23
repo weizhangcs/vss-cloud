@@ -1,11 +1,11 @@
 {
   "zh": {
     "focus": {
-      "general": "剧集“{series_name}”的完整剧情发展，包括主要冲突、高潮和结局。",
-      "romantic_progression": "剧集“{series_name}”中男女主角的情感发展脉络，包括初识、误会、冲突、升温和最终结局。",
-      "business_success": "剧集“{series_name}”中主角如何克服职场困难，完成商业复仇或取得成功的关键事件。",
-      "suspense_reveal": "剧集“{series_name}”中埋藏最大的悬念、秘密线索，以及最终的反转真相。",
-      "character_growth": "剧集“{series_name}”中主角个人的成长弧光，性格转变的关键节点。"
+      "general": "剧集“{asset_name}”的完整剧情发展，包括主要冲突、高潮和结局。",
+      "romantic_progression": "剧集“{asset_name}”中男女主角的情感发展脉络，包括初识、误会、冲突、升温和最终结局。",
+      "business_success": "剧集“{asset_name}”中主角如何克服职场困难，完成商业复仇或取得成功的关键事件。",
+      "suspense_reveal": "剧集“{asset_name}”中埋藏最大的悬念、秘密线索，以及最终的反转真相。",
+      "character_growth": "剧集“{asset_name}”中主角个人的成长弧光，性格转变的关键节点。"
     },
     "scope": {
       "episode_range": "请重点关注第 {start} 集到第 {end} 集之间的剧情。",
@@ -18,11 +18,11 @@
   },
   "en": {
     "focus": {
-      "general": "The complete plot development of the series \"{series_name}\", including major conflicts, climaxes, and endings.",
-      "romantic_progression": "The emotional development trajectory between the male and female leads in \"{series_name}\", including first meetings, misunderstandings, conflicts, escalating affection, and the final outcome.",
-      "business_success": "Key events in \"{series_name}\" where the protagonist overcomes career difficulties, achieves business vengeance, or attains success.",
-      "suspense_reveal": "The biggest suspense and secret clues buried in \"{series_name}\", as well as the ultimate revealing truth.",
-      "character_growth": "The personal growth arc of the protagonist in \"{series_name}\" and key turning points in their personality."
+      "general": "The complete plot development of the series \"{asset_name}\", including major conflicts, climaxes, and endings.",
+      "romantic_progression": "The emotional development trajectory between the male and female leads in \"{asset_name}\", including first meetings, misunderstandings, conflicts, escalating affection, and the final outcome.",
+      "business_success": "Key events in \"{asset_name}\" where the protagonist overcomes career difficulties, achieves business vengeance, or attains success.",
+      "suspense_reveal": "The biggest suspense and secret clues buried in \"{asset_name}\", as well as the ultimate revealing truth.",
+      "character_growth": "The personal growth arc of the protagonist in \"{asset_name}\" and key turning points in their personality."
     },
     "scope": {
       "episode_range": "Please focus specifically on the plot between episode {start} and episode {end}.",

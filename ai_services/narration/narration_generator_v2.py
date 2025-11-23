@@ -79,20 +79,21 @@ class NarrationGeneratorV2(AIServiceMixin):
         return corpus
 
     def execute(self,
-                series_name: str,
+                asset_name: str,
                 corpus_display_name: str,
                 blueprint_path: Path,
-                config: Dict[str, Any]) -> Dict[str, Any]:
+                config: Dict[str, Any],
+                asset_id: str) -> Dict[str, Any]:
         """
         执行 V2 生成流程主入口。
         """
-        self.logger.info(f"Starting V2 Generation for: {series_name}")
+        self.logger.info(f"Starting V2 Generation for: {asset_name} (Asset: {asset_id})")
 
         # ==================================================================
         # Stage 1: Intent-Based Retrieval (有目的检索)
         # ==================================================================
         qb = NarrationQueryBuilder(self.metadata_dir, self.logger)
-        query = qb.build(series_name, config)
+        query = qb.build(asset_name, config)
 
         rag_corpus = self._get_rag_corpus(corpus_display_name)
         top_k = config.get("rag_top_k", 50)
@@ -109,7 +110,7 @@ class NarrationGeneratorV2(AIServiceMixin):
         # Stage 2: Context Enhancement (本地时序增强)
         # ==================================================================
         enhancer = ContextEnhancer(blueprint_path, self.logger)
-        enhanced_context = enhancer.enhance(raw_chunks, config)
+        enhanced_context = enhancer.enhance(raw_chunks, config, asset_id=asset_id)
 
         if not enhanced_context or "No relevant scenes" in enhanced_context:
             self.logger.warning("Context enhancement resulted in empty content.")
@@ -140,7 +141,7 @@ class NarrationGeneratorV2(AIServiceMixin):
         query_lang_pack = self.query_templates.get(lang, self.query_templates.get("en", {}))
         focus_templates = query_lang_pack.get("focus", {})
         focus_desc = focus_templates.get(focus_key, focus_templates.get("general", ""))
-        narrative_focus_text = focus_desc.replace("{series_name}", series_name)
+        narrative_focus_text = focus_desc.replace("{asset_name}", asset_name)
 
         # [注入] 总时长控制 (Duration Constraint)
         target_duration_min = control.get("target_duration_minutes")
@@ -182,7 +183,7 @@ class NarrationGeneratorV2(AIServiceMixin):
 
         return {
             "generation_date": datetime.now().isoformat(),
-            "series_name": series_name,
+            "asset_name": asset_name,
             "config_snapshot": config,
             "narration_script": refined_script,
             "ai_total_usage": usage

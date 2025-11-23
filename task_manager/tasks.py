@@ -98,18 +98,19 @@ def _handle_narration_generation(task: Task) -> dict:
     logger.info(f"Starting NARRATION GENERATION (V2) for Task ID: {task.id}...")
 
     payload = task.payload
-    series_name = payload.get("series_name")
-    series_id = payload.get("series_id")
+    asset_name = payload.get("asset_name")
+    # [核心修改] 获取 asset_id 替代 series_id
+    asset_id = payload.get("asset_id")
     output_file_path_str = payload.get("absolute_output_path")
 
     # [新增] V2 必须依赖蓝图文件进行上下文增强
     # 客户端创建任务时，必须在 payload 中提供 'blueprint_path'
     blueprint_path_str = payload.get("absolute_blueprint_path")
 
-    if not all([series_name, series_id, output_file_path_str, blueprint_path_str]):
+    if not all([asset_name, asset_id, output_file_path_str, blueprint_path_str]):
         raise ValueError(
             "Payload for GENERATE_NARRATION is missing required keys: "
-            "series_name, series_id, absolute_output_path, or absolute_blueprint_path."
+            "asset_name, asset_id, absolute_output_path, or absolute_blueprint_path."
         )
 
     blueprint_path = Path(blueprint_path_str)
@@ -142,8 +143,9 @@ def _handle_narration_generation(task: Task) -> dict:
     logger.info(f"Final V2 Config: {json.dumps(final_config, ensure_ascii=False)}")
 
     # --- 2. 实例化 V2 服务 ---
-    instance_id = task.organization.name
-    corpus_display_name = f"{series_id}-{instance_id}"
+    # 构建 Corpus Name
+    org_id = str(task.organization.org_id)
+    corpus_display_name = f"{asset_id}-{org_id}"
 
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
@@ -168,10 +170,11 @@ def _handle_narration_generation(task: Task) -> dict:
 
     # --- 3. 执行生成 ---
     result_data = generator_v2.execute(
-        series_name=series_name,
+        asset_name=asset_name,
         corpus_display_name=corpus_display_name,
         blueprint_path=blueprint_path,
-        config=final_config
+        config=final_config,
+        asset_id=asset_id
     )
 
     # --- 4. 保存结果 ---
@@ -211,15 +214,19 @@ def _handle_rag_deployment(task: Task) -> dict:
 
     # [核心修改] 使用 Organization ID (UUID) 作为租户隔离标识，而非 Name
     # 这将决定 GCS 中的文件夹名称 (rag-engine-source/{org_id}/...)
-    instance_id = str(task.organization.org_id)
+    org_id = str(task.organization.org_id)
+
+    # 2. 获取 Asset ID (UUID) - 替代原有的 series_id
+    asset_id = payload.get("asset_id")
+    if not asset_id:
+        raise ValueError("Payload missing required 'asset_id'.")
 
     # 语料库显示名称建议也包含 ID，或者保持 ID+Name 的组合以增强可读性
     # 但为了底层稳定性，我们主要依赖 ID
     series_id = payload.get("series_id")
 
-    # Corpus Display Name 依然可以使用 Name 以便人类阅读，或者也改为 ID
-    # 建议：为了 RAG 检索时的精确匹配，这里最好也包含 ID 或者是唯一的
-    corpus_display_name = f"{series_id}-{instance_id}"
+    # 3. 构建 Corpus Name: {asset_id}-{org_id}
+    corpus_display_name = f"{asset_id}-{org_id}"
 
     deployer = RagDeployer(
         project_id=settings.GOOGLE_CLOUD_PROJECT,
@@ -235,7 +242,8 @@ def _handle_rag_deployment(task: Task) -> dict:
         facts_path=local_facts_path,
         gcs_bucket_name=settings.GCS_DEFAULT_BUCKET,
         staging_dir=temp_dir / "staging",
-        instance_id=instance_id
+        org_id=org_id,  # 传入 org_id
+        asset_id=asset_id  # 传入 asset_id
     )
 
     logger.info(f"Backing up source files for Task {task.id} to GCS...")
