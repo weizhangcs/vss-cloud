@@ -117,7 +117,7 @@ class RagDeployer:
             raise  # 重新抛出异常，让Celery知道任务失败
 
     def _fuse_and_prepare_files(self, source_blueprint_path: Path, enhanced_facts_path: Path, staging_dir: Path,
-                                gcs_bucket_name: str, instance_id: str) -> str:
+                                gcs_bucket_name: str, instance_id: str) -> tuple[str, int]:
         """在本地处理文件：加载、融合、生成富文本。"""
         self.logger.info(f"▶️ 步骤 1/4: 正在加载实例 '{instance_id}' 的源数据...")
         try:

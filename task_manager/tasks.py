@@ -209,8 +209,16 @@ def _handle_rag_deployment(task: Task) -> dict:
     temp_dir = settings.SHARED_TMP_ROOT / f"rag_deploy_{task.id}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    instance_id = task.organization.name
+    # [核心修改] 使用 Organization ID (UUID) 作为租户隔离标识，而非 Name
+    # 这将决定 GCS 中的文件夹名称 (rag-engine-source/{org_id}/...)
+    instance_id = str(task.organization.org_id)
+
+    # 语料库显示名称建议也包含 ID，或者保持 ID+Name 的组合以增强可读性
+    # 但为了底层稳定性，我们主要依赖 ID
     series_id = payload.get("series_id")
+
+    # Corpus Display Name 依然可以使用 Name 以便人类阅读，或者也改为 ID
+    # 建议：为了 RAG 检索时的精确匹配，这里最好也包含 ID 或者是唯一的
     corpus_display_name = f"{series_id}-{instance_id}"
 
     deployer = RagDeployer(

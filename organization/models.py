@@ -14,10 +14,17 @@ from django_choices_field import TextChoicesField
 class Organization(TimeStampedModel):
     """
     租户（组织）模型。
-    我们系统中的所有其他资源（任务、账单等）都将与此模型关联。
     """
+    # [新增] 组织唯一标识符 (不可变)
+    # 使用 UUID 确保全局唯一性，且不会随名称变更而改变
+    org_id = models.UUIDField(
+        _("Organization ID"),
+        default=uuid.uuid4,
+        editable=False,
+        unique=True #如果是开发环境：建议直接删除数据库重建，或者删除旧的 migration 文件重新 makemigrations;如果是生产环境：需要先添加 null=True，通过脚本填充 UUID，然后再改为 unique=True, null=False
+    )
+
     name = models.CharField(_("Organization Name"), max_length=255, unique=True)
-    # 备注: TimeStampedModel 自动提供了 created 和 modified 字段
 
     class Meta:
         verbose_name = _("Organization")
@@ -25,7 +32,7 @@ class Organization(TimeStampedModel):
         ordering = ['name']
 
     def __str__(self):
-        return self.name
+        return f"{self.name} ({str(self.org_id)[:8]})"
 
 
 class UserProfile(TimeStampedModel):
