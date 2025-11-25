@@ -133,6 +133,12 @@ class RagDeployer:
             facts_by_character_map = facts_data.get("identified_facts_by_character", {})
             for char_name, facts_list in facts_by_character_map.items():
                 for fact_dict in facts_list:
+                    # [核心修复] 防御性编程：强制将 value 转换为字符串
+                    # 解决 LLM 输出整数类型 (如年龄: 23) 导致 Pydantic 校验失败的问题
+                    if "value" in fact_dict:
+                        fact_dict["value"] = str(fact_dict["value"])
+
+                    # 构造新的字典并注入 owner
                     fact_dict_with_owner = {**fact_dict, "character_name": char_name}
                     all_facts.append(IdentifiedFact(**fact_dict_with_owner))
             self.logger.info("✅ 源数据与增强事实加载并校验成功。")
