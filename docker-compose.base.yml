@@ -1,0 +1,56 @@
+# docker-compose.base.yml
+version: '3.8'
+
+services:
+  # --- 基础服务 (所有环境通用) ---
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - TZ=Asia/Shanghai
+      # 数据库凭证从 .env 读取，不在 YAML 中硬编码
+    env_file:
+      - .env
+    ports:
+      - "5432" # 仅暴露给 Docker 网络，Dev 环境可在 Override 中映射到宿主机
+
+  redis:
+    image: redis:7
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "6379"
+
+  # --- 应用服务骨架 (具体实现由 Override 决定) ---
+  web:
+    # image 或 build 在具体环境中定义
+    # command 在具体环境中定义
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
+    volumes:
+      # 凭证文件是所有环境都需要的
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
+
+  worker:
+    # image 或 build 在具体环境中定义
+    command: celery -A core.celery worker -l info
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
+    volumes:
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
+
+volumes:
+  postgres_data:

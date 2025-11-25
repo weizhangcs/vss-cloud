@@ -37,3 +37,6 @@ staticfiles/
 
 # 文档
 README.md
+
+# distrubution目录
+dist/

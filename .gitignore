@@ -60,3 +60,6 @@ conf/gcp-credentials.json
 
 # 临时的本地测试
 # tests/
+
+# distrubution目录
+dist/
