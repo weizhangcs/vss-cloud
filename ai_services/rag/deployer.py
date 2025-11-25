@@ -56,7 +56,8 @@ class RagDeployer:
                 facts_path: Path,
                 gcs_bucket_name: str,
                 staging_dir: Path,
-                instance_id: str):
+                org_id: str,  # [修改] instance_id -> org_id
+                asset_id: str):
         """
         执行完整的部署流程。
 
@@ -83,7 +84,8 @@ class RagDeployer:
                 enhanced_facts_path=facts_path,
                 staging_dir=staging_dir,
                 gcs_bucket_name=gcs_bucket_name,
-                instance_id=instance_id
+                org_id=org_id,
+                asset_id=asset_id
             )
 
             # 步骤 3: 将本地生成的富文本文件批量上传到GCS。
@@ -99,7 +101,7 @@ class RagDeployer:
             )
 
             self.logger.info("=" * 70)
-            self.logger.info(f"✅ 租户 '{instance_id}' 的RAG部署任务已成功启动！")
+            self.logger.info(f"✅ 租户 '{org_id}' 的RAG部署任务已成功启动！")
             self.logger.info(f"   目标语料库: {corpus_display_name}")
             self.logger.info("   请前往Google Cloud控制台查看文件导入进度。")
             self.logger.info("=" * 70 + "\n")
@@ -117,9 +119,9 @@ class RagDeployer:
             raise  # 重新抛出异常，让Celery知道任务失败
 
     def _fuse_and_prepare_files(self, source_blueprint_path: Path, enhanced_facts_path: Path, staging_dir: Path,
-                                gcs_bucket_name: str, instance_id: str) -> str:
+                                gcs_bucket_name: str, org_id: str, asset_id: str) -> tuple[str, int]:
         """在本地处理文件：加载、融合、生成富文本。"""
-        self.logger.info(f"▶️ 步骤 1/4: 正在加载实例 '{instance_id}' 的源数据...")
+        self.logger.info(f"▶️ 步骤 1/4: 正在加载租户 '{org_id}' 的源数据......")
         try:
             # 使用Pydantic模型加载和验证输入文件，确保数据结构正确。
             blueprint = NarrativeBlueprint.parse_file(source_blueprint_path)
@@ -131,6 +133,12 @@ class RagDeployer:
             facts_by_character_map = facts_data.get("identified_facts_by_character", {})
             for char_name, facts_list in facts_by_character_map.items():
                 for fact_dict in facts_list:
+                    # [核心修复] 防御性编程：强制将 value 转换为字符串
+                    # 解决 LLM 输出整数类型 (如年龄: 23) 导致 Pydantic 校验失败的问题
+                    if "value" in fact_dict:
+                        fact_dict["value"] = str(fact_dict["value"])
+
+                    # 构造新的字典并注入 owner
                     fact_dict_with_owner = {**fact_dict, "character_name": char_name}
                     all_facts.append(IdentifiedFact(**fact_dict_with_owner))
             self.logger.info("✅ 源数据与增强事实加载并校验成功。")
@@ -152,18 +160,22 @@ class RagDeployer:
 
         # 确保本地暂存目录存在。
         staging_dir.mkdir(parents=True, exist_ok=True)
-        series_id = blueprint.project_metadata.project_name
-        self.logger.info(f"▶️ 步骤 3/4: 正在为 '{series_id}' 生成富文本文件...")
+        project_name = blueprint.project_metadata.project_name
+        self.logger.info(f"▶️ 步骤 3/4: 正在为 '{project_name}' (Asset: {asset_id}) 生成富文本文件...")
 
         # 遍历每个场景，调用Pydantic模型的方法生成RAG所需的富文本内容。
         for scene_id, scene_obj in blueprint.scenes.items():
-            rich_text_content = scene_obj.to_rag_text(series_id=series_id, lang='zh')
-            scene_file_path = staging_dir / f"{series_id}_scene_{scene_id}_enhanced.txt"
+            # [核心修改] 传入 asset_id (UUID) 作为 RAG 文档的元数据
+            rich_text_content = scene_obj.to_rag_text(asset_id=asset_id, lang='zh')
+
+            # [核心修改] 文件名使用 asset_id 确保唯一性和稳定性
+            # 格式: {asset_id}_scene_{scene_id}_enhanced.txt
+            scene_file_path = staging_dir / f"{asset_id}_scene_{scene_id}_enhanced.txt"
             scene_file_path.write_text(rich_text_content, encoding='utf-8')
         self.logger.info(f"✅ 富文本文档已在本地暂存目录 '{staging_dir}' 生成。")
 
         # 构建并返回GCS的目标URI，用于后续的上传和RAG同步。
-        gcs_uri = f"gs://{gcs_bucket_name}/rag-engine-source/{instance_id}/{series_id}"
+        gcs_uri = f"gs://{gcs_bucket_name}/rag-engine-source/{org_id}/{asset_id}"
         return gcs_uri, total_scenes
 
     def _upload_dir_to_gcs(self, local_dir: Path, gcs_uri: str):

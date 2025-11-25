@@ -58,5 +58,5 @@ conf/gcp-credentials.json
 # macOS
 .DS_Store
 
-# 临时的本地测试
-# tests/
+# distrubution目录
+dist/

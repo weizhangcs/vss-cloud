@@ -1,6 +1,4 @@
-# 文件名: aliyun_paieas_strategy.py
-# 描述: 使用阿里云PAI-EAS部署的CosyVoice服务的策略。
-# 版本: 1.3 (修正了headers的定义方式，使其更规范)
+# ai_services/dubbing/strategies/aliyun_paieas_strategy.py
 
 import base64
 import requests
@@ -19,8 +17,6 @@ class AliyunPAIEASStrategy(ReplicationStrategy):
             raise ValueError("PAI-EAS的服务地址或Token未配置。")
 
         self.service_url = service_url.rstrip('/')
-
-        # [核心修正] 只定义一个包含通用认证信息的基础headers
         self.base_headers = {
             'Authorization': f'Bearer {token}',
         }
@@ -37,7 +33,6 @@ class AliyunPAIEASStrategy(ReplicationStrategy):
             'text': (None, text),
         }
 
-        # 对于文件上传，requests会自动处理Content-Type，我们只需传入认证头
         response = requests.post(upload_url, headers=self.base_headers, files=files)
         response.raise_for_status()
 
@@ -52,26 +47,36 @@ class AliyunPAIEASStrategy(ReplicationStrategy):
         """实现语音合成的逻辑。"""
         synthesis_url = f"{self.service_url}/api/v1/audio/speech"
 
+        default_instruct = "用讲故事的语气，声音自然清晰"
+        instruct_text = params.get("instruct", default_instruct)
+
         payload = {
             "model": params.get("model", "CosyVoice2-0.5B"),
             "input": {
                 "mode": params.get("mode", "natural_language_replication"),
                 "reference_audio_id": params.get("reference_audio_id"),
                 "text": text,
-                "instruct": "用讲故事的语气，要有抑扬顿挫",
+                "instruct": instruct_text,
                 "speed": params.get("speed", 1.0)
             },
             "stream": False,
         }
 
+        # [新增] 调试日志：打印即将发送的 Payload 摘要
+        print(f"[DEBUG PAI-EAS] Text Sent: {text[:200]}... (Total: {len(text)} chars)")
+
         if not payload["input"]["reference_audio_id"]:
             raise ValueError("PAI-EAS语音复刻需要一个 'reference_audio_id'。")
 
-        # [核心修正] 基于base_headers创建本次请求专用的headers
         request_headers = self.base_headers.copy()
         request_headers['Content-Type'] = 'application/json'
 
         response = requests.post(synthesis_url, headers=request_headers, json=payload)
+
+        # [新增] 错误处理增强
+        if response.status_code != 200:
+            print(f"[ERROR PAI-EAS] Status: {response.status_code}, Content: {response.text}")
+
         response.raise_for_status()
 
         response_data = response.json()

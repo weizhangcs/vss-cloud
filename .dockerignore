@@ -5,7 +5,10 @@
 # Docker
 .dockerignore
 Dockerfile
-docker-compose.yml
+docker-compose.base.yml
+docker-compose.dev.yml
+docker-compose.test.yml
+docker-compose.prod.yml
 
 # Python 虚拟环境
 .venv/
@@ -25,9 +28,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+conf/nginx.template.conf
 conf/gcp-credentials.json
-
-deploy.sh
 
 # 本地数据和日志
 logs/
@@ -36,4 +38,16 @@ shared_media/
 staticfiles/
 
 # 文档
+doc/
 README.md
+
+# distrubution目录
+dist/
+
+# 部署用途的脚本
+init.sh
+install_deps.sh
+package_deploy.sh
+
+# tests
+tests/

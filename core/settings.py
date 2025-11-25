@@ -39,6 +39,12 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 # 我们在 .env 中设置了 '*' (星号)，用于开发
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost', cast=lambda v: [s.strip() for s in v.split(',')])
 
+CSRF_TRUSTED_ORIGINS = config(
+    'CSRF_TRUSTED_ORIGINS',
+    default='http://localhost,http://127.0.0.1',
+    cast=lambda v: [s.strip() for s in v.split(',')]
+)
+
 # 1. 确保 USE_I18N 为 True (Django 默认开启)
 USE_I18N = True
 
@@ -160,16 +166,11 @@ TIME_ZONE = 'Asia/Shanghai'
 USE_I18N = True
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
-
-# 定义 collectstatic 命令将所有静态文件复制到的目录
-# 我们将其指向项目根目录下的 'staticfiles' 文件夹
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-# --------------------
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

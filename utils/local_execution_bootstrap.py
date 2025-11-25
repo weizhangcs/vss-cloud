@@ -34,6 +34,9 @@ def bootstrap_local_env_and_logger(project_root: Path):
     mock_settings.GOOGLE_CLOUD_LOCATION = config('GOOGLE_CLOUD_LOCATION', default='')  # <--- [新增]
     mock_settings.GCS_DEFAULT_BUCKET = config('GCS_DEFAULT_BUCKET', default='')  # <--- [新增]
 
+    mock_settings.PAI_EAS_SERVICE_URL = config('PAI_EAS_SERVICE_URL', default='')  # <--- [新增]
+    mock_settings.PAI_EAS_TOKEN = config('PAI_EAS_TOKEN', default='')  # <--- [新增]
+
     # --- [Category 3] 业务配置与定价 ---
     mock_settings.USD_TO_RMB_EXCHANGE_RATE = config('USD_TO_RMB_EXCHANGE_RATE', cast=float, default=7.25)
 

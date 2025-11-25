@@ -24,7 +24,7 @@ from ai_services.narration.narration_generator_v2 import NarrationGeneratorV2
 from ai_services.editing.broll_selector_service import BrollSelectorService
 
 import yaml # <-- [新增]
-from ai_services.dubbing.dubbing_engine import DubbingEngine # <-- [新增]
+from ai_services.dubbing.dubbing_engine_v2 import DubbingEngineV2
 from ai_services.dubbing.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy # <-- [新增]
 from ai_services.dubbing.strategies.base_strategy import TTSStrategy
 
@@ -98,18 +98,19 @@ def _handle_narration_generation(task: Task) -> dict:
     logger.info(f"Starting NARRATION GENERATION (V2) for Task ID: {task.id}...")
 
     payload = task.payload
-    series_name = payload.get("series_name")
-    series_id = payload.get("series_id")
+    asset_name = payload.get("asset_name")
+    # [核心修改] 获取 asset_id 替代 series_id
+    asset_id = payload.get("asset_id")
     output_file_path_str = payload.get("absolute_output_path")
 
     # [新增] V2 必须依赖蓝图文件进行上下文增强
     # 客户端创建任务时，必须在 payload 中提供 'blueprint_path'
     blueprint_path_str = payload.get("absolute_blueprint_path")
 
-    if not all([series_name, series_id, output_file_path_str, blueprint_path_str]):
+    if not all([asset_name, asset_id, output_file_path_str, blueprint_path_str]):
         raise ValueError(
             "Payload for GENERATE_NARRATION is missing required keys: "
-            "series_name, series_id, absolute_output_path, or absolute_blueprint_path."
+            "asset_name, asset_id, absolute_output_path, or absolute_blueprint_path."
         )
 
     blueprint_path = Path(blueprint_path_str)
@@ -142,8 +143,9 @@ def _handle_narration_generation(task: Task) -> dict:
     logger.info(f"Final V2 Config: {json.dumps(final_config, ensure_ascii=False)}")
 
     # --- 2. 实例化 V2 服务 ---
-    instance_id = task.organization.name
-    corpus_display_name = f"{series_id}-{instance_id}"
+    # 构建 Corpus Name
+    org_id = str(task.organization.org_id)
+    corpus_display_name = f"{asset_id}-{org_id}"
 
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,
@@ -168,10 +170,11 @@ def _handle_narration_generation(task: Task) -> dict:
 
     # --- 3. 执行生成 ---
     result_data = generator_v2.execute(
-        series_name=series_name,
+        asset_name=asset_name,
         corpus_display_name=corpus_display_name,
         blueprint_path=blueprint_path,
-        config=final_config
+        config=final_config,
+        asset_id=asset_id
     )
 
     # --- 4. 保存结果 ---
@@ -209,9 +212,21 @@ def _handle_rag_deployment(task: Task) -> dict:
     temp_dir = settings.SHARED_TMP_ROOT / f"rag_deploy_{task.id}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    instance_id = task.organization.name
+    # [核心修改] 使用 Organization ID (UUID) 作为租户隔离标识，而非 Name
+    # 这将决定 GCS 中的文件夹名称 (rag-engine-source/{org_id}/...)
+    org_id = str(task.organization.org_id)
+
+    # 2. 获取 Asset ID (UUID) - 替代原有的 series_id
+    asset_id = payload.get("asset_id")
+    if not asset_id:
+        raise ValueError("Payload missing required 'asset_id'.")
+
+    # 语料库显示名称建议也包含 ID，或者保持 ID+Name 的组合以增强可读性
+    # 但为了底层稳定性，我们主要依赖 ID
     series_id = payload.get("series_id")
-    corpus_display_name = f"{series_id}-{instance_id}"
+
+    # 3. 构建 Corpus Name: {asset_id}-{org_id}
+    corpus_display_name = f"{asset_id}-{org_id}"
 
     deployer = RagDeployer(
         project_id=settings.GOOGLE_CLOUD_PROJECT,
@@ -227,7 +242,8 @@ def _handle_rag_deployment(task: Task) -> dict:
         facts_path=local_facts_path,
         gcs_bucket_name=settings.GCS_DEFAULT_BUCKET,
         staging_dir=temp_dir / "staging",
-        instance_id=instance_id
+        org_id=org_id,  # 传入 org_id
+        asset_id=asset_id  # 传入 asset_id
     )
 
     logger.info(f"Backing up source files for Task {task.id} to GCS...")
@@ -609,29 +625,22 @@ def _handle_editing_script_generation(task: Task) -> dict:
 def _handle_dubbing_generation(task: Task) -> dict:
     """
     [新增] 处理“生成配音”任务的核心逻辑（组合根）。
+    集成 DubbingEngineV2。
     """
     logger.info(f"Starting DUBBING GENERATION for Task ID: {task.id}...")
 
     payload = task.payload
-    # 1. 从 payload 中获取路径和参数
     narration_path_str = payload.get("absolute_input_narration_path")
-    output_file_path_str = payload.get("absolute_output_path")  # 这是最终JSON脚本的路径
+    output_file_path_str = payload.get("absolute_output_path")
     service_params = payload.get("service_params", {})
 
-    # [核心修正]
-    # 使用 .pop() 来提取 'template_name'。
-    # 这会从 service_params 字典中【移除】该键，
-    # 从而避免在 **service_params 解包时重复传递。
     template_name = service_params.pop("template_name", None)
 
-    # 现在我们的检查逻辑是正确的
     if not all([narration_path_str, output_file_path_str, template_name]):
-        raise ValueError("Payload for GENERATE_DUBBING is missing required keys: "
-                         "absolute_input_narration_path, absolute_output_path, or "
-                         "service_params.template_name")
+        raise ValueError("Payload for GENERATE_DUBBING is missing required keys.")
 
     narration_path = Path(narration_path_str)
-    output_json_path = Path(output_file_path_str)  # 最终的 JSON 脚本路径
+    output_json_path = Path(output_file_path_str)
 
     # 2. 为此任务创建专属的音频文件输出目录
     audio_work_dir = settings.SHARED_TMP_ROOT / f"dubbing_task_{task.id}_audio"
@@ -639,49 +648,51 @@ def _handle_dubbing_generation(task: Task) -> dict:
     logger.info(f"Audio files will be saved to: {audio_work_dir}")
 
     # 3. 组装依赖 (Composition Root)
-    logger.info("Assembling dependencies for DubbingEngine service...")
+    logger.info("Assembling dependencies for DubbingEngineV2 service...")
 
-    # 3.1 加载 YAML 模板
     templates_config_path = settings.BASE_DIR / 'ai_services' / 'dubbing' / 'configs' / 'dubbing_templates.yaml'
     with templates_config_path.open('r', encoding='utf-8') as f:
         all_templates = yaml.safe_load(f)
 
-    # 3.2 实例化所需的策略 (按需添加)
+    # 实例化策略
     strategy_paieas = AliyunPAIEASStrategy(
         service_url=settings.PAI_EAS_SERVICE_URL,
         token=settings.PAI_EAS_TOKEN
     )
 
     available_strategies: Dict[str, TTSStrategy] = {
-        "aliyun_paieas": strategy_paieas
+        "aliyun_paieas": strategy_paieas,
+        # 未来可以在这里添加 "google_tts", "elevenlabs" 等
     }
 
-    # 4. 实例化 DubbingEngine 服务并注入所有依赖
-    dubbing_service = DubbingEngine(
+    # [新增] 定义 metadata 目录 (用于加载 tts_instructs.json)
+    metadata_dir = settings.BASE_DIR / 'ai_services' / 'dubbing' / 'metadata'
+
+    # 4. 实例化 DubbingEngineV2
+    dubbing_service = DubbingEngineV2(
         logger=logger,
-        work_dir=audio_work_dir,  # 注入音频工作目录
+        work_dir=audio_work_dir,
         strategies=available_strategies,
         templates=all_templates,
-        shared_root_path=settings.SHARED_ROOT  # 注入共享根目录
+        metadata_dir=metadata_dir,  # <-- [V2 新增依赖]
+        shared_root_path=settings.SHARED_ROOT
     )
 
     # 5. 执行服务
-    #    [核心修正] 现在的 **service_params 不再包含 'template_name'
     result_data = dubbing_service.execute(
         narration_path=narration_path,
-        template_name=template_name,  # 显式传递
-        **service_params  # 安全解包（只包含其他参数，如果有的话）
+        template_name=template_name,
+        **service_params
     )
 
-    # 6. 将服务返回的 JSON 脚本保存到任务指定的输出路径
+    # 6. 保存结果
     with output_json_path.open('w', encoding='utf-8') as f:
         json.dump(result_data, f, ensure_ascii=False, indent=2)
 
-    logger.info(f"DUBBING GENERATION finished. Output JSON script saved to: {output_json_path}")
+    logger.info(f"DUBBING GENERATION finished. Output saved to: {output_json_path}")
 
-    # 7. 返回 Celery Task 的最终结果 (存入 Task.result 字段)
     return {
-        "message": "Dubbing script and audio files generated successfully.",
+        "message": "Dubbing script and audio files generated successfully (V2 Engine).",
         "output_file_path": str(output_json_path.relative_to(settings.SHARED_ROOT)),
         "audio_output_directory": str(audio_work_dir.relative_to(settings.SHARED_ROOT)),
         "total_clips_generated": len(result_data.get("dubbing_script", []))

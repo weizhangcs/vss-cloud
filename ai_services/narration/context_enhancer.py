@@ -71,7 +71,7 @@ class ContextEnhancer:
         match = re.search(r"_scene_(\d+)_enhanced\.txt", source_uri)
         return int(match.group(1)) if match else None
 
-    def enhance(self, retrieved_chunks: List[Any], config: Dict[str, Any]) -> str:
+    def enhance(self, retrieved_chunks: List[Any], config: Dict[str, Any], asset_id: str) -> str:
         """
         执行上下文增强的标准流程。
 
@@ -121,7 +121,8 @@ class ContextEnhancer:
 
         # --- 4. 内容重组 (Reconstruction) ---
         final_context_parts = []
-        series_name = self.blueprint_data.get("project_metadata", {}).get("project_name", "Unknown")
+        # [注意] 这里我们不再强依赖 blueprint 里的 project_name 来做 RAG 标识
+        #series_name = self.blueprint_data.get("project_metadata", {}).get("project_name", "Unknown")
         lang = config.get("lang", "zh")
 
         for sid in sorted_ids:
@@ -132,7 +133,8 @@ class ContextEnhancer:
             try:
                 # 利用 Pydantic Model 生成标准化文本
                 scene_obj = Scene(**scene_data)
-                rich_text = scene_obj.to_rag_text(series_id=series_name, lang=lang)
+                # [核心修改] 传入 asset_id (UUID) 以生成一致的上下文
+                rich_text = scene_obj.to_rag_text(asset_id=asset_id, lang=lang)
                 final_context_parts.append(rich_text)
                 # 添加分隔符，帮助 LLM 区分场景边界
                 final_context_parts.append("\n" + "=" * 30 + "\n")

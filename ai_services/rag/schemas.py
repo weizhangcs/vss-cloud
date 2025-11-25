@@ -97,7 +97,7 @@ class Scene(BaseModel):
     mood_and_atmosphere: Optional[str] = None
     enhanced_facts: List[IdentifiedFact] = Field(default_factory=list, exclude=True)
 
-    def to_rag_text(self, series_id: str, lang: str = 'en') -> str:
+    def to_rag_text(self, asset_id: str, lang: str = 'en') -> str:
         """
         [修正后] 生成RAG引擎所需的、“事实增强版”的富文本文档。
         采用更安全的 f-string 写法以兼容 Python 3.11。
@@ -106,7 +106,7 @@ class Scene(BaseModel):
         # --- 1. 构建元数据块 ---
         metadata_lines = [
             labels.get("metadata_block_header", "--- Metadata Block ---"),
-            f"{labels.get('series_id_label', 'Series ID')}: {series_id}",
+            f"{labels.get('asset_id_label', 'Asset ID')}: {asset_id}",
             f"{labels.get('scene_id_label', 'Scene ID')}: {self.id}",
             f"{labels.get('location_label', 'Location')}: {self.inferred_location or 'N/A'}",
             f"{labels.get('mood_label', 'Mood')}: {self.mood_and_atmosphere or 'N/A'}",

@@ -43,7 +43,7 @@ class NarrationQueryBuilder:
             self.logger.error(f"Failed to load query templates: {e}")
             return {}
 
-    def build(self, series_name: str, config: Dict[str, Any]) -> str:
+    def build(self, asset_name: str, config: Dict[str, Any]) -> str:
         """
         构建最终的 RAG 检索查询字符串。
 
@@ -65,9 +65,9 @@ class NarrationQueryBuilder:
         focus_templates = lang_pack.get("focus", {})
         focus_key = control.get("narrative_focus", "general")
         # 如果指定的 focus_key 不存在，回退到 general 模版；若 general 也不存在，使用剧集名兜底
-        base_template = focus_templates.get(focus_key, focus_templates.get("general", f"{series_name}"))
+        base_template = focus_templates.get(focus_key, focus_templates.get("general", f"{asset_name}"))
 
-        query_parts = [base_template.format(series_name=series_name)]
+        query_parts = [base_template.format(asset_name=asset_name)]
 
         # 3. 处理剧情范围约束 (Scope)
         # 虽然 RAG 是语义检索，但在 Query 中明确范围有助于模型理解上下文

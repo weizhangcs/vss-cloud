@@ -1,0 +1,14 @@
+{
+  "zh": {
+    "objective": "用客观平稳的语气说<|endofprompt|>",
+    "humorous": "用轻松欢快的语气说<|endofprompt|>",
+    "emotional": "用深情温柔的语气说<|endofprompt|>",
+    "suspense": "用低沉神秘的语气说<|endofprompt|>"
+  },
+  "en": {
+    "objective": "Speak in a neutral and calm tone<|endofprompt|>",
+    "humorous": "Speak in a lively and happy tone<|endofprompt|>",
+    "emotional": "Speak in an affectionate and soft tone<|endofprompt|>",
+    "suspense": "Speak in a mysterious and tense tone<|endofprompt|>"
+  }
+}

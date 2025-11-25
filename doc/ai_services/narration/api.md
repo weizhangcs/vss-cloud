@@ -24,13 +24,12 @@
  "task_type": "GENERATE_NARRATION", 
  "payload": { 
  // --- [基础定位信息] --- 
- "series_name": "总裁的契约女友", // 剧集展示名称（用于 Prompt 组装） 
- "series_id": "series_001", // 剧集唯一 ID（用于定位 RAG 语料库） 
+ "asset_name": "总裁的契约女友", // [修正] 媒资展示名称（用于 Prompt 组装） 
+ "asset_id": "98995bd5-d27e-45fe-ae62-ee46c31a84b4", // [修正] 媒资唯一 ID（用于定位 RAG 语料库）,建议采用uuid,但不强制 
  
  // --- [资源路径] (必填) --- 
- // 请传入相对于 shared_media 根目录的路径 
- "blueprint_path": "resources/projects/series_001/narrative_blueprint.json", 
- "output_path": "outputs/narrations/script_v1.json", 
+ // 本蓝图文件的相对路径。通常由 Edge 端上传至 tmp/ 目录。
+ "blueprint_path": "tmp/ABCDEFGH_narrative_blueprint.json",
  
  // --- [核心控制参数] (V2 引擎配置) --- 
  "service_params": { 

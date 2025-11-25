@@ -1,9 +1,9 @@
-# docker-compose.prod.yml
+# docker-compose.test.yml
 version: '3.8'
 
 services:
   web:
-    image: ghcr.io/weizhangcs/vss-cloud:latest
+    image: ghcr.io/weizhangcs/vss-cloud:dev
     command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
     expose:
       - 8000
@@ -12,14 +12,15 @@ services:
       - ./shared_media:/app/shared_media
 
   worker:
-    image: ghcr.io/weizhangcs/vss-cloud:latest
+    image: ghcr.io/weizhangcs/vss-cloud:dev
     volumes:
       - ./shared_media:/app/shared_media
 
+  # Nginx 仅在 Test/Prod 环境启用
   nginx:
     image: nginx:latest
     ports:
-      - "80:80" # 生产环境使用 80
+      - "8080:80" # 测试环境使用 8080，避免与宿主机 80 冲突
     volumes:
       - ./conf/nginx.template.conf:/etc/nginx/conf.d/default.conf.template
       - ./staticfiles:/app/staticfiles:ro
