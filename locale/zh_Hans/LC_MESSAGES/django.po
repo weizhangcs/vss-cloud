@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-04 00:16+0000\n"
+"POT-Creation-Date: 2025-11-26 07:40+0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,228 +17,440 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-#: core/settings.py:50
+
+#: core/settings.py:56
 msgid "English"
-msgstr ""
+msgstr "英语"
 
-#: core/settings.py:51
+#: core/settings.py:57
 msgid "Simplified Chinese"
-msgstr ""
+msgstr "简体中文"
 
-#: core/settings.py:191
+#: core/settings.py:190
 msgid "Visify Story Studio (Cloud)"
-msgstr ""
+msgstr "Visify 影视云中台"
 
-#: core/settings.py:196
+#: core/settings.py:195
 msgid "Account Management"
-msgstr ""
+msgstr "账户管理"
 
-#: core/settings.py:199 organization/models.py:24
+#: core/settings.py:198 organization/models.py:65
 msgid "Organizations"
-msgstr ""
+msgstr "租户组织"
 
-#: core/settings.py:206 organization/models.py:65
-msgid "User Profiles"
-msgstr ""
-
-#: core/settings.py:211 organization/models.py:114
+#: core/settings.py:211 organization/models.py:173
 msgid "Edge Instances"
-msgstr ""
+msgstr "边缘计算节点"
 
 #: core/settings.py:217
 msgid "Task Management"
-msgstr ""
+msgstr "任务管理"
 
-#: core/settings.py:220 task_manager/models.py:65
+#: core/settings.py:220 task_manager/models.py:70
 msgid "Tasks"
-msgstr ""
+msgstr "任务列表"
 
 #: core/settings.py:227
 msgid "Authentication"
-msgstr ""
+msgstr "认证与授权"
 
 #: core/settings.py:230
 msgid "Users"
-msgstr ""
+msgstr "用户"
 
 #: core/settings.py:235
 msgid "Groups"
-msgstr ""
+msgstr "用户组"
 
-#: organization/admin.py:30
+#: organization/admin.py:32 task_manager/admin.py:40
+msgid "Basic Info"
+msgstr "基本信息"
+
+#: organization/admin.py:40
+msgid "Contact Details"
+msgstr "联系方式"
+
+#: organization/admin.py:49
+msgid "System Info"
+msgstr "系统信息"
+
+#: organization/admin.py:63
+msgid "Edge Count"
+msgstr "节点数量"
+
+#: organization/admin.py:78
+msgid "Identity"
+msgstr "身份标识"
+
+#: organization/admin.py:86
+msgid "Credentials"
+msgstr "凭证密钥"
+
+#: organization/admin.py:93
+msgid "Asset Ledger"
+msgstr "资产台账"
+
+#: organization/admin.py:94
+msgid "Static deployment information."
+msgstr "静态部署信息与资产台账。"
+
+#: organization/admin.py:103
+msgid "Telemetry"
+msgstr "遥测数据"
+
+#: organization/admin.py:118
 msgid "Profile"
-msgstr ""
+msgstr "个人资料"
 
-#: organization/admin.py:54 organization/models.py:19
-msgid "Organization Name"
-msgstr ""
-
-#: organization/admin.py:85 organization/models.py:99
-msgid "Instance Name"
-msgstr ""
-
-#: organization/admin.py:90 organization/models.py:104
-#: task_manager/models.py:57
-msgid "Status"
-msgstr ""
-
-#: organization/admin.py:138
+#: organization/admin.py:141
 msgid "Username"
-msgstr ""
-
-#: organization/admin.py:142
-msgid "Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only."
-msgstr ""
+msgstr "用户名"
 
 #: organization/admin.py:145
-msgid "Email address"
-msgstr ""
+msgid "Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only."
+msgstr "必填。150个字符以内。仅允许字母、数字和 @/./+/-/_ 。"
 
 #: organization/admin.py:148
-msgid "Optional."
-msgstr ""
+msgid "Email address"
+msgstr "电子邮件地址"
 
 #: organization/admin.py:151
+msgid "Optional."
+msgstr "选填。"
+
+#: organization/admin.py:154
 msgid "Password"
-msgstr ""
+msgstr "密码"
 
-#: organization/admin.py:156
+#: organization/admin.py:159
 msgid "Confirm Password"
-msgstr ""
+msgstr "确认密码"
 
-#: organization/admin.py:169
+#: organization/admin.py:172
 msgid "Passwords do not match."
-msgstr ""
+msgstr "两次输入的密码不一致。"
 
-#: organization/admin.py:175
+#: organization/admin.py:178
 msgid "A user with this username already exists."
-msgstr ""
+msgstr "该用户名的用户已存在。"
 
-#: organization/models.py:23 organization/models.py:50
-#: organization/models.py:85 task_manager/models.py:38
+#: organization/models.py:18
+msgid "Personal"
+msgstr "个人"
+
+#: organization/models.py:19
+msgid "Company"
+msgstr "公司"
+
+#: organization/models.py:20
+msgid "Community"
+msgstr "社群"
+
+#: organization/models.py:23
+msgid "Intention"
+msgstr "意向客户"
+
+#: organization/models.py:24
+msgid "Signed"
+msgstr "已签约"
+
+#: organization/models.py:25
+msgid "Suspended"
+msgstr "已停用"
+
+#: organization/models.py:26
+msgid "Partner"
+msgstr "合作伙伴"
+
+#: organization/models.py:27
+msgid "Group Internal"
+msgstr "集团内部"
+
+#: organization/models.py:30
+msgid "Organization ID"
+msgstr "组织 ID"
+
+#: organization/models.py:35
+msgid "Organization Name"
+msgstr "组织名称"
+
+#: organization/models.py:41
+msgid "Attribute"
+msgstr "业务属性"
+
+#: organization/models.py:42
+msgid "The nature of the organization."
+msgstr "该组织的业务性质。"
+
+#: organization/models.py:48
+msgid "Business Status"
+msgstr "商务状态"
+
+#: organization/models.py:49
+msgid "Current business relationship status."
+msgstr "当前的商务合作状态。"
+
+#: organization/models.py:53
+msgid "Contact Name"
+msgstr "联系人姓名"
+
+#: organization/models.py:55
+msgid "Contact Position"
+msgstr "联系人职务"
+
+#: organization/models.py:57
+msgid "Contact Email"
+msgstr "联系人邮箱"
+
+#: organization/models.py:59
+msgid "Contact Phone"
+msgstr "联系电话"
+
+#: organization/models.py:61
+msgid "Description/Notes"
+msgstr "备注信息"
+
+#: organization/models.py:61
+msgid "Internal notes."
+msgstr "内部备注。"
+
+#: organization/models.py:64 organization/models.py:89
+#: organization/models.py:127 task_manager/models.py:36
 msgid "Organization"
-msgstr ""
+msgstr "租户组织"
 
-#: organization/models.py:36
+#: organization/models.py:75
 msgid "Owner"
-msgstr ""
+msgstr "所有者"
 
-#: organization/models.py:37
+#: organization/models.py:76
 msgid "Admin"
-msgstr ""
+msgstr "管理员"
 
-#: organization/models.py:38
+#: organization/models.py:77
 msgid "Member"
-msgstr ""
+msgstr "成员"
 
-#: organization/models.py:44
+#: organization/models.py:83
 msgid "User"
-msgstr ""
-
-#: organization/models.py:60
-msgid "Role"
-msgstr ""
-
-#: organization/models.py:64
-msgid "User Profile"
-msgstr ""
-
-#: organization/models.py:78
-msgid "Online"
-msgstr ""
-
-#: organization/models.py:79
-msgid "Offline"
-msgstr ""
-
-#: organization/models.py:91
-msgid "Instance ID"
-msgstr ""
+msgstr "用户"
 
 #: organization/models.py:97
+msgid "Role"
+msgstr "角色"
+
+#: organization/models.py:101
+msgid "User Profile"
+msgstr "用户详情"
+
+#: organization/models.py:102
+msgid "User Profiles"
+msgstr "用户列表"
+
+#: organization/models.py:114
+msgid "Online"
+msgstr "在线"
+
+#: organization/models.py:115
+msgid "Offline"
+msgstr "离线"
+
+#: organization/models.py:116
+msgid "Maintenance"
+msgstr "维护中"
+
+#: organization/models.py:119
+msgid "Windows Docker Desktop (Local/LAN)"
+msgstr "Windows Docker (本地/局域网)"
+
+#: organization/models.py:120
+msgid "Linux Docker"
+msgstr "Linux Docker"
+
+#: organization/models.py:121
+msgid "All-in-One Workstation"
+msgstr "一体机工作站"
+
+#: organization/models.py:133
+msgid "Instance ID"
+msgstr "节点 ID"
+
+#: organization/models.py:139
 msgid "API Key"
-msgstr ""
+msgstr "API 密钥"
 
-#: organization/models.py:107
+#: organization/models.py:141
+msgid "Instance Name"
+msgstr "节点名称"
+
+#: organization/models.py:147
+msgid "Connection Status"
+msgstr "连接状态"
+
+#: organization/models.py:151
+msgid "Is Enabled"
+msgstr "业务启用"
+
+#: organization/models.py:153
+msgid "Business switch to enable/disable this instance."
+msgstr "用于控制该节点业务权限的开关。"
+
+#: organization/models.py:159
+msgid "Deployment Type"
+msgstr "部署形态"
+
+#: organization/models.py:162
+msgid "Software Version"
+msgstr "软件版本"
+
+#: organization/models.py:163
+msgid "Remarks"
+msgstr "备注"
+
+#: organization/models.py:166
 msgid "Last Heartbeat"
-msgstr ""
+msgstr "最后心跳时间"
 
-#: organization/models.py:113
+#: organization/models.py:172
 msgid "Edge Instance"
-msgstr ""
+msgstr "边缘节点"
 
-#: task_manager/models.py:18
-msgid "Deploy RAG Corpus (Cloud)"
-msgstr ""
+#: task_manager/admin.py:46
+msgid "Performance & Timing"
+msgstr "性能与耗时"
 
-#: task_manager/models.py:19
-msgid "Character Metrics (Cloud)"
-msgstr ""
+#: task_manager/admin.py:52
+msgid "Data Inspector"
+msgstr "数据透视"
+
+#: task_manager/admin.py:54
+msgid "Input payload, execution result and system logs."
+msgstr "任务的输入参数、执行结果及系统日志。"
+
+#: task_manager/admin.py:87 task_manager/models.py:55
+msgid "Status"
+msgstr "状态"
+
+#: task_manager/admin.py:97 task_manager/models.py:49
+msgid "Task Type"
+msgstr "任务类型"
+
+#: task_manager/admin.py:101
+msgid "Created"
+msgstr "创建时间"
+
+#: task_manager/admin.py:105
+msgid "Modified"
+msgstr "修改时间"
+
+#: task_manager/admin.py:118 task_manager/models.py:59
+msgid "Payload"
+msgstr "输入参数"
+
+#: task_manager/admin.py:132 task_manager/models.py:60
+msgid "Result"
+msgstr "执行结果"
+
+#: task_manager/dashboard.py:71
+msgid "Tasks (7 Days)"
+msgstr "近7日任务数"
+
+#: task_manager/dashboard.py:74
+msgid "Total tasks processed"
+msgstr "处理任务总量"
+
+#: task_manager/dashboard.py:77
+msgid "Success Rate"
+msgstr "成功率"
+
+#: task_manager/dashboard.py:82
+msgid "Compute Hours"
+msgstr "计算时长 (小时)"
+
+#: task_manager/dashboard.py:84
+msgid "Cumulative duration"
+msgstr "累计运行耗时"
+
+#: task_manager/dashboard.py:87
+msgid "Active Edges"
+msgstr "在线节点"
+
+#: task_manager/dashboard.py:89
+msgid "Online instances"
+msgstr "当前在线实例"
 
 #: task_manager/models.py:20
-msgid "Character Identifier (Cloud)"
-msgstr ""
+msgid "Deploy RAG Corpus"
+msgstr "部署 RAG 知识库"
 
 #: task_manager/models.py:21
-msgid "Character Analysis Pipeline (Cloud)"
-msgstr ""
+msgid "Character Identifier"
+msgstr "角色事实识别"
 
 #: task_manager/models.py:22
-msgid "Generate Narration (Cloud)"
-msgstr ""
+msgid "Generate Narration"
+msgstr "生成解说词"
 
 #: task_manager/models.py:23
-msgid "Generate Editing Script (Cloud)"
-msgstr ""
+msgid "Generate Dubbing"
+msgstr "生成配音"
 
 #: task_manager/models.py:24
-msgid "Run Dubbing (Edge)"
-msgstr ""
+msgid "Generate Editing Script"
+msgstr "生成剪辑脚本"
 
-#: task_manager/models.py:25
-msgid "Run Synthesis (Edge)"
-msgstr ""
+#: task_manager/models.py:27
+msgid "Pending"
+msgstr "排队中"
 
 #: task_manager/models.py:28
-msgid "Pending"
-msgstr ""
+msgid "Running"
+msgstr "执行中"
 
 #: task_manager/models.py:29
-msgid "Assigned"
-msgstr ""
+msgid "Completed"
+msgstr "已完成"
 
 #: task_manager/models.py:30
-msgid "Running"
-msgstr ""
-
-#: task_manager/models.py:31
-msgid "Completed"
-msgstr ""
-
-#: task_manager/models.py:32
 msgid "Failed"
-msgstr ""
+msgstr "失败"
 
-#: task_manager/models.py:46
+#: task_manager/models.py:44
 msgid "Assigned Edge"
-msgstr ""
-
-#: task_manager/models.py:51
-msgid "Task Type"
-msgstr ""
-
-#: task_manager/models.py:59
-msgid "Payload"
-msgstr ""
-
-#: task_manager/models.py:60
-msgid "Result"
-msgstr ""
+msgstr "执行节点"
 
 #: task_manager/models.py:61
 msgid "Logs"
-msgstr ""
+msgstr "系统日志"
 
 #: task_manager/models.py:64
+msgid "Started At"
+msgstr "开始时间"
+
+#: task_manager/models.py:65
+msgid "Finished At"
+msgstr "结束时间"
+
+#: task_manager/models.py:66
+msgid "Duration"
+msgstr "耗时"
+
+#: task_manager/models.py:66
+msgid "Execution time."
+msgstr "任务实际执行时长。"
+
+#: task_manager/models.py:69
 msgid "Task"
-msgstr ""
+msgstr "任务"
+
+#: templates/admin/index.html:5
+msgid "Dashboard"
+msgstr "仪表盘"
+
+#: templates/admin/index.html:5
+msgid "Django site admin"
+msgstr "Django 管理后台"
+
+#: templates/admin/index.html:31
+msgid "7-Day Task Performance"
+msgstr "近7日任务性能趋势"

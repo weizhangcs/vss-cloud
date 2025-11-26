@@ -32,9 +32,7 @@ class TaskCreateSerializer(serializers.ModelSerializer):
         我们不希望边缘意外地创建一个它自己应该执行的任务（如 RUN_DUBBING）。
         """
         cloud_native_tasks = [
-            Task.TaskType.CHARACTER_METRICS,
             Task.TaskType.CHARACTER_IDENTIFIER,
-            Task.TaskType.CHARACTER_PIPELINE,
             Task.TaskType.DEPLOY_RAG_CORPUS,
             Task.TaskType.GENERATE_NARRATION,
             Task.TaskType.GENERATE_EDITING_SCRIPT,
@@ -45,32 +43,6 @@ class TaskCreateSerializer(serializers.ModelSerializer):
                 f"Invalid task_type. Only the following types can be created via API: {cloud_native_tasks}"
             )
         return value
-
-    # [新增] 为 CHARACTER_PIPELINE 任务添加专属的 payload 验证逻辑
-    def validate(self, data):
-        """
-        对整个数据对象进行验证，特别是针对不同任务类型的 payload 结构。
-        """
-        if data.get('task_type') == Task.TaskType.CHARACTER_PIPELINE:
-            payload = data.get('payload', {})
-            mode = payload.get('mode')
-
-            if mode == 'specific':
-                if 'characters_to_analyze' not in payload:
-                    raise serializers.ValidationError(
-                        "For 'specific' mode, 'characters_to_analyze' is required in payload.")
-            elif mode == 'threshold':
-                if 'threshold' not in payload or not isinstance(payload['threshold'], dict):
-                    raise serializers.ValidationError(
-                        "For 'threshold' mode, a 'threshold' object is required in payload.")
-                if 'top_n' not in payload['threshold'] and 'min_score' not in payload['threshold']:
-                    raise serializers.ValidationError(
-                        "The 'threshold' object must contain either 'top_n' or 'min_score'.")
-            else:
-                raise serializers.ValidationError(
-                    "Payload for CHARACTER_PIPELINE must include a 'mode' ('specific' or 'threshold').")
-
-        return data
 
 class TaskCreateResponseSerializer(serializers.ModelSerializer):
     """

@@ -1,12 +1,9 @@
 # organization/models.py
+
 import uuid
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils.translation import gettext_lazy as _
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-
-# model_utils 和 django-choices 已经在 requirements.txt 中
 from model_utils.models import TimeStampedModel
 from django_choices_field import TextChoicesField
 
@@ -14,17 +11,54 @@ from django_choices_field import TextChoicesField
 class Organization(TimeStampedModel):
     """
     租户（组织）模型。
+    v1.2 扩充：增加业务属性、商业状态及详细联系人信息。
     """
-    # [新增] 组织唯一标识符 (不可变)
-    # 使用 UUID 确保全局唯一性，且不会随名称变更而改变
+
+    class OrgAttribute(models.TextChoices):
+        PERSONAL = "PERSONAL", _("Personal")
+        COMPANY = "COMPANY", _("Company")
+        COMMUNITY = "COMMUNITY", _("Community")
+
+    class BusinessStatus(models.TextChoices):
+        INTENTION = "INTENTION", _("Intention")
+        SIGNED = "SIGNED", _("Signed")
+        SUSPENDED = "SUSPENDED", _("Suspended")
+        PARTNER = "PARTNER", _("Partner")
+        INTERNAL = "INTERNAL", _("Group Internal")
+
     org_id = models.UUIDField(
         _("Organization ID"),
         default=uuid.uuid4,
         editable=False,
-        unique=True #如果是开发环境：建议直接删除数据库重建，或者删除旧的 migration 文件重新 makemigrations;如果是生产环境：需要先添加 null=True，通过脚本填充 UUID，然后再改为 unique=True, null=False
+        unique=True
+    )
+    name = models.CharField(_("Organization Name"), max_length=255, unique=True)
+
+    # --- 业务台账信息 ---
+    attribute = TextChoicesField(
+        choices_enum=OrgAttribute,
+        default=OrgAttribute.COMPANY,
+        verbose_name=_("Attribute"),
+        help_text=_("The nature of the organization.")
     )
 
-    name = models.CharField(_("Organization Name"), max_length=255, unique=True)
+    business_status = TextChoicesField(
+        choices_enum=BusinessStatus,
+        default=BusinessStatus.INTENTION,
+        verbose_name=_("Business Status"),
+        help_text=_("Current business relationship status.")
+    )
+
+    # --- 运营联系信息 ---
+    contact_name = models.CharField(_("Contact Name"), max_length=100, blank=True)
+    # [新增] 联系人职务
+    contact_position = models.CharField(_("Contact Position"), max_length=100, blank=True)
+
+    contact_email = models.EmailField(_("Contact Email"), blank=True)
+    # [新增] 联系电话
+    contact_phone = models.CharField(_("Contact Phone"), max_length=20, blank=True)
+
+    description = models.TextField(_("Description/Notes"), blank=True, help_text=_("Internal notes."))
 
     class Meta:
         verbose_name = _("Organization")
@@ -32,13 +66,11 @@ class Organization(TimeStampedModel):
         ordering = ['name']
 
     def __str__(self):
-        return f"{self.name} ({str(self.org_id)[:8]})"
+        return f"{self.name} ({self.get_business_status_display()})"
 
 
 class UserProfile(TimeStampedModel):
-    """
-    扩展的 User 模型，用于关联租户和角色。
-    """
+    # ... (保持不变) ...
     class Role(models.TextChoices):
         OWNER = "OWNER", _("Owner")
         ADMIN = "ADMIN", _("Admin")
@@ -55,10 +87,8 @@ class UserProfile(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="members",
         verbose_name=_("Organization"),
-        null = True,  # <-- 允许数据库中该字段为空
-        blank = True  # <-- 允许 Django Admin 中该字段为空
-        # 警告：此字段在数据库中是必需的 (NOT NULL)
-        # 这与您的 signals.py 中的 create_user_profile 逻辑有冲突
+        null=True,
+        blank=True
     )
     role = TextChoicesField(
         choices_enum=Role,
@@ -74,16 +104,21 @@ class UserProfile(TimeStampedModel):
     def __str__(self):
         return f"{self.user.username} ({self.organization.name})"
 
+
 class EdgeInstance(TimeStampedModel):
     """
     边缘实例模型。
-    代表一个已向云端注册的 visify-ssw (边缘) 实例。
-    [已从 task_manager.models 移至此处]
     """
 
     class EdgeStatus(models.TextChoices):
         ONLINE = "ONLINE", _("Online")
         OFFLINE = "OFFLINE", _("Offline")
+        MAINTENANCE = "MAINTENANCE", _("Maintenance")
+
+    class DeploymentType(models.TextChoices):
+        WIN_DOCKER = "WIN_DOCKER", _("Windows Docker Desktop (Local/LAN)")
+        LINUX_DOCKER = "LINUX_DOCKER", _("Linux Docker")
+        WORKSTATION = "WORKSTATION", _("All-in-One Workstation")
 
     organization = models.ForeignKey(
         Organization,
@@ -99,17 +134,34 @@ class EdgeInstance(TimeStampedModel):
     )
     api_key = models.UUIDField(
         default=uuid.uuid4,
-        editable=True,  # 保持 True，以便 Admin 可以重置
+        editable=True,
         unique=True,
         verbose_name=_("API Key")
     )
     name = models.CharField(_("Instance Name"), max_length=255)
+
     status = TextChoicesField(
         choices_enum=EdgeStatus,
         default=EdgeStatus.OFFLINE,
-        max_length=10,
-        verbose_name=_("Status")
+        max_length=15,
+        verbose_name=_("Connection Status")
     )
+
+    is_enabled = models.BooleanField(
+        _("Is Enabled"),
+        default=True,
+        help_text=_("Business switch to enable/disable this instance.")
+    )
+
+    deployment_type = TextChoicesField(
+        choices_enum=DeploymentType,
+        default=DeploymentType.LINUX_DOCKER,
+        verbose_name=_("Deployment Type")
+    )
+
+    software_version = models.CharField(_("Software Version"), max_length=50, blank=True, default="v1.0.0")
+    description = models.TextField(_("Remarks"), blank=True)
+
     last_heartbeat = models.DateTimeField(
         _("Last Heartbeat"),
         null=True,
@@ -122,4 +174,5 @@ class EdgeInstance(TimeStampedModel):
         unique_together = ('organization', 'name')
 
     def __str__(self):
-        return f"{self.name} ({self.organization.name})"
+        state_mark = "✅" if self.is_enabled else "🚫"
+        return f"{state_mark} {self.name}"
