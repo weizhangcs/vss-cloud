@@ -56,7 +56,7 @@
 
 * 停止服务：
 ```bash
-  docker compose -f docker-compose.dev.yml down 
+  docker compose -f docker-compose.dev.yml -f docker-compose.dev.yml down 
 ```
 
 * 查看日志： 
@@ -65,8 +65,8 @@
 ``` 
 * 数据库变更(模型修改后)：
 ```bash
-  docker compose -f docker-compose.dev.yml run --rm web python manage.py makemigrations 
-  docker compose -f docker-compose.dev.yml run --rm web python manage.py migrate
+  docker compose -f docker-compose.base.yml -f docker-compose.dev.yml run --rm web python manage.py makemigrations 
+  docker compose -f docker-compose.base.yml -f docker-compose.dev.yml run --rm web python manage.py migrate
 ``` 
 --- 
  
@@ -143,22 +143,22 @@
 
 * 拉取新镜像：
 ```bash
-  docker compose -f docker-compose.dev.yml -f docker-compose.prod.yml pull 
+  docker compose -f docker-compose.base.yml -f docker-compose.prod.yml pull 
 ```  
 * 应用数据库变更（如果有）：
 ```bash
-  docker compose -f docker-compose.dev.yml -f docker-compose.prod.yml run --rm web python manage.py migrate 
+  docker compose -f docker-compose.base.yml -f docker-compose.prod.yml run --rm web python manage.py migrate 
 ```  
 * 更新静态文件（如果有前端资源变动）：
 ```bash
-  docker compose -f docker-compose.dev.yml -f docker-compose.prod.yml run --rm web python manage.py collectstatic --noinput 
+  docker compose -f docker-compose.base.yml -f docker-compose.prod.yml run --rm web python manage.py collectstatic --noinput 
 ```  
 * 平滑重启服务：
 ```bash
   # 仅重启业务容器 
-  docker compose -f docker-compose.dev.yml -f docker-compose.prod.yml up -d --no-deps web worker 
+  docker compose -f docker-compose.base.yml -f docker-compose.prod.yml up -d --no-deps web worker 
   # 或者全量重启 
-  docker compose -f docker-compose.dev.yml -f docker-compose.prod.yml up -d 
+  docker compose -f docker-compose.base.yml -f docker-compose.prod.yml up -d 
 ```  
 --- 
  

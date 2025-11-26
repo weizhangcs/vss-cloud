@@ -1,0 +1,67 @@
+{% extends 'unfold/layouts/base.html' %}
+{% load i18n unfold %}
+
+{% block title %}
+    {% trans 'Dashboard' %} | {{ site_title|default:_('Django site admin') }}
+{% endblock %}
+
+{% block content %}
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 lg:gap-8 mb-8">
+        {% for card in kpi %}
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-col">
+                <div class="font-medium text-gray-500 dark:text-gray-400 mb-2 text-sm uppercase tracking-wider">
+                    {{ card.title }}
+                </div>
+                <div class="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-auto mb-2">
+                    {{ card.value }}
+                </div>
+                <div class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                    {% if "failed" in card.footer %}
+                        <span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>
+                    {% endif %}
+                    {{ card.footer }}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="flex flex-col gap-8">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-900 dark:text-gray-100 mb-6 text-lg">
+                {% trans '7-Day Task Performance' %}
+            </h3>
+
+            <div class="relative w-full" style="height: 320px;">
+                <canvas id="performanceChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    {{ chart|json_script:"chart-data" }}
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            const chartData = JSON.parse(document.getElementById('chart-data').textContent);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(0, 0, 0, 0.05)' } },
+                        x: { grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { usePointStyle: true } }
+                    }
+                }
+            });
+        });
+    </script>
+{% endblock %}

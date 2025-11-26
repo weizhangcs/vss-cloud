@@ -54,6 +54,7 @@ from django.utils.translation import gettext_lazy as _
 
 LANGUAGES = [
     ('en', _('English')),
+    ('zh-hans', _('Simplified Chinese')),
 ]
 
 
@@ -113,7 +114,8 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        #'DIRS': [],
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -161,7 +163,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
-LANGUAGE_CODE = 'en'
+LANGUAGE_CODE = 'zh-hans'
 TIME_ZONE = 'Asia/Shanghai'
 USE_I18N = True
 USE_TZ = True
@@ -186,7 +188,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 UNFOLD = {
     "SITE_TITLE": _("Visify Story Studio (Cloud)"),
-
+    "DASHBOARD_CALLBACK": "task_manager.dashboard.dashboard_callback",
+    "SHOW_LANGUAGES": True,
     "SIDEBAR": {
         "navigation": [
             {
@@ -199,11 +202,12 @@ UNFOLD = {
                         # 改为直接的 URL 路径
                         "link": "/admin/organization/organization/",
                     },
-                    {
-                        "title": _("User Profiles"),
-                        # --- 修改这里 ---
-                        "link": "/admin/organization/userprofile/",
-                    },
+                    # --- [修改] 暂时注释掉 User Profiles ---
+                    # {
+                    #     "title": _("User Profiles"),
+                    #     "link": "/admin/organization/userprofile/",
+                    # },
+                    # -------------------------------------
 {
                         "title": _("Edge Instances"),
                         "link": "/admin/organization/edgeinstance/",
