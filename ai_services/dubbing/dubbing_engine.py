@@ -1,134 +1,245 @@
 # ai_services/dubbing/dubbing_engine.py
-import yaml
-from pathlib import Path
-from typing import Dict, Any, List
+
 import json
 import logging
-# [修改] 移除 from tqdm import tqdm
+import subprocess
+import os
+from pathlib import Path
+from typing import Dict, Any, List
 
-# [修改] 导入新的依赖
+# 导入 Step 1 的切分器
+from .text_segmenter import MultilingualTextSegmenter
+# 导入 Step 2 的策略接口
 from .strategies.base_strategy import TTSStrategy, ReplicationStrategy
 
 
-# [修改] DubbingEngine 不再继承任何基类
 class DubbingEngine:
+    """
+    智能配音引擎 (FFmpeg Native 版)。
+    """
     SERVICE_NAME = "dubbing_engine"
-
-    # HAS_OWN_DATADIR 逻辑将由 Celery 任务处理
 
     def __init__(self,
                  logger: logging.Logger,
                  work_dir: Path,
                  strategies: Dict[str, TTSStrategy],
                  templates: Dict[str, Any],
+                 metadata_dir: Path,
                  shared_root_path: Path):
-        """
-        [重构] 初始化方法，接收所有外部依赖。
 
-        Args:
-            logger: Celery 任务传入的日志记录器。
-            work_dir: 此任务专用的音频输出目录 (绝对路径)。
-            strategies: 一个包含已实例化策略的字典。
-            templates: 从 YAML 加载的模板配置字典。
-            shared_root_path: 项目的共享根目录 (e.g., /app/shared_media)。
-        """
         self.logger = logger
         self.work_dir = work_dir
         self.strategies = strategies
         self.templates = templates
-        self.shared_root_path = shared_root_path  # 用于解析参考音频
-        self.logger.info(
-            f"DubbingEngine initialized for work_dir: {self.work_dir} with strategies: {list(self.strategies.keys())}")
+        self.shared_root_path = shared_root_path
+
+        # 初始化组件
+        self.segmenter = MultilingualTextSegmenter(logger)
+        self.instructs = self._load_json_config(metadata_dir / "tts_instructs.json")
+
+        self.logger.info("DubbingEngine initialized (FFmpeg Native Mode).")
+
+    def _load_json_config(self, path: Path) -> Dict:
+        if path.is_file():
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        return {}
 
     def execute(self, narration_path: Path, template_name: str, **kwargs) -> Dict[str, Any]:
         """
-        [重构] 执行配音生成的核心逻辑。
+        执行配音生成主流程。
         """
-        self.logger.info(f"开始使用模板 '{template_name}' 生成配音...")
+        # 1. 加载输入数据
+        with narration_path.open('r', encoding='utf-8') as f:
+            input_data = json.load(f)
+            narration_script = input_data.get("narration_script", [])
+            config_snapshot = input_data.get("config_snapshot", {})
+            default_style = config_snapshot.get("control_params", {}).get("style", "objective")
 
+        # 2. 准备策略和参数
         template = self.templates.get(template_name)
         if not template:
-            raise ValueError(f"模板 '{template_name}' 未定义。")
+            raise ValueError(f"Template '{template_name}' not found.")
 
-        provider_name = template.get("provider")
-        strategy = self.strategies.get(provider_name)
+        provider = template.get("provider")
+        strategy = self.strategies.get(provider)
         if not strategy:
-            raise ValueError(f"提供商 '{provider_name}' 没有对应的实现策略。")
+            raise ValueError(f"Strategy for provider '{provider}' not found.")
 
-        params = template.get("params", {})
-        method = template.get("method", "text")
+        # 基础参数
+        base_params = template.get("params", {}).copy()
+        base_params.update(kwargs)
 
-        # [修改] 语音复刻的预处理逻辑
-        if method == "replication":
-            self.logger.info("Replication method detected. Starting pre-processing step...")
-            if not isinstance(strategy, ReplicationStrategy):
-                raise TypeError(
-                    f"提供商 '{provider_name}' 的策略不支持 'replication' (非 ReplicationStrategy 实例)。")
+        # 3. 处理语音复刻
+        if template.get("method") == "replication":
+            self._handle_replication_setup(strategy, template, base_params)
 
-            source_info = template.get("replication_source")
-            if not source_info:
-                raise ValueError("Replication模板必须包含 'replication_source' 配置。")
+        # 4. 确定风格指令
+        target_style = kwargs.get("style", default_style)
+        lang = kwargs.get("lang", "zh")
 
-            # [核心路径修正] 从 shared_root_path 解析参考音频的绝对路径
-            ref_audio_rel_path = source_info['audio_path']
-            ref_audio_abs_path = self.shared_root_path / ref_audio_rel_path
+        instruct_text = self.instructs.get(lang, {}).get(target_style, "")
+        if instruct_text:
+            base_params["instruct"] = instruct_text
+            self.logger.info(f"Injecting TTS Instruct for style '{target_style}': {instruct_text[:20]}...")
 
-            if not ref_audio_abs_path.is_file():
-                raise FileNotFoundError(f"Replication source audio not found at: {ref_audio_abs_path}")
+        # 5. 执行生成循环
+        results = []
+        total = len(narration_script)
 
-            text = source_info['text']
-            self.logger.info(f"Uploading reference audio from: {ref_audio_abs_path}")
+        for idx, item in enumerate(narration_script):
+            text = item.get("narration", "")
+            if not text: continue
 
-            # 调用策略上传
-            reference_audio_id = strategy.upload_reference_audio(ref_audio_abs_path, text)
-            self.logger.info(f"Successfully uploaded reference audio. Received ID: {reference_audio_id}")
-            params['reference_audio_id'] = reference_audio_id
+            self.logger.info(f"--- Processing clip {idx + 1}/{total} ---")
+            self.logger.info(f"Origin Text Length: {len(text)} chars")
 
-        # --- 配音循环 ---
-        with narration_path.open('r', encoding='utf-8') as f:
-            narration_data = json.load(f).get("narration_script", [])
+            # 5.1 文本切分 (Segmentation)
+            # [核心修改] 显式调整切分阈值，从 300 改为 150，增加切分粒度以方便调试
+            # 并在日志中打印切分结果
+            segments = self.segmenter.segment(text, lang=lang, max_len=90)
 
-        dubbing_results = []
+            self.logger.info(f"✂️  Segmentation Result: {len(segments)} parts")
+            for i, s in enumerate(segments):
+                self.logger.info(f"    [Part {i + 1}] ({len(s)} chars): {s[:100]}...")
 
-        # [核心修改] 移除 tqdm，替换为 logger
-        total_clips = len(narration_data)
-        self.logger.info(f"Starting dubbing loop for {total_clips} clips...")
+            audio_segments_paths = []
 
-        for index, entry in enumerate(narration_data):
-            # [核心修改] 使用 logger 报告进度
-            self.logger.info(f"Processing clip {index + 1}/{total_clips}...")
+            # 5.2 分段合成 (Synthesize Sub-clips)
+            for seg_idx, seg_text in enumerate(segments):
+                temp_filename = f"temp_{idx}_{seg_idx}.wav"
+                temp_path = self.work_dir / temp_filename
 
-            narration_text = entry.get("narration")
-            if not narration_text:
-                self.logger.warning(f"Skipping clip {index + 1} (no narration text found).")
+                self.logger.info(f"    >> Synthesizing Part {seg_idx + 1}/{len(segments)} -> {temp_filename}")
+
+                try:
+                    # 调用策略生成音频
+                    strategy.synthesize(seg_text, temp_path, base_params)
+
+                    if temp_path.exists() and temp_path.stat().st_size > 0:
+                        file_size_kb = temp_path.stat().st_size / 1024
+                        self.logger.info(f"       ✅ Success. Size: {file_size_kb:.2f} KB")
+                        audio_segments_paths.append(temp_path)
+                    else:
+                        self.logger.error(f"       ❌ Failed. File not created or empty.")
+                except Exception as e:
+                    self.logger.error(f"       ❌ Exception: {e}")
+
+            # 5.3 音频拼接 (FFmpeg Merge)
+            if not audio_segments_paths:
+                self.logger.warning(f"No audio generated for clip {idx}")
+                results.append({**item, "error": "Generation failed"})
                 continue
 
-            audio_format = template.get("audio_format", "mp3")
-            audio_file_name = f"narration_{index:03d}.{audio_format}"
+            final_ext = template.get('audio_format', 'mp3')
+            final_filename = f"narration_{idx:03d}.{final_ext}"
+            final_path = self.work_dir / final_filename
 
-            # [核心路径修正] 音频文件保存到任务专属的 work_dir
-            audio_file_path_abs = self.work_dir / audio_file_name
+            self.logger.info(f"    >> Merging {len(audio_segments_paths)} files -> {final_filename}")
 
             try:
-                duration_seconds = strategy.synthesize(
-                    text=narration_text,
-                    output_path=audio_file_path_abs,  # 策略使用绝对路径保存
-                    params=params
-                )
-
-                # [核心路径修正] 计算相对于 shared_root 的路径，用于存入 JSON
-                audio_file_path_rel = audio_file_path_abs.relative_to(self.shared_root_path)
-
-                dubbing_results.append({
-                    **entry,
-                    "duration_seconds": round(duration_seconds, 3),
-                    "audio_file_path": str(audio_file_path_rel)  # 存储相对路径
-                })
+                # 调用 FFmpeg 进行拼接
+                duration = self._merge_audio_files_ffmpeg(audio_segments_paths, final_path)
+                self.logger.info(f"       ✅ Merge Complete. Duration: {duration}s")
             except Exception as e:
-                self.logger.error(f"Failed to synthesize text: '{narration_text[:20]}...'", exc_info=True)
-                dubbing_results.append({**entry, "duration_seconds": 0.0, "error": str(e)})
+                self.logger.error(f"       ❌ Merge Failed: {e}")
+                results.append({**item, "error": f"Merge failed: {e}"})
+                self._cleanup_temp_files(audio_segments_paths)
+                continue
 
-        # [修改] 不再保存文件，只返回最终的字典结构
-        final_output = {"dubbing_script": dubbing_results}
-        self.logger.info("Dubbing generation complete. Returning data structure.")
-        return final_output
+            # 清理临时分段文件
+            self._cleanup_temp_files(audio_segments_paths)
+
+            # 5.4 记录结果
+            rel_path = final_path.relative_to(self.shared_root_path)
+            results.append({
+                **item,
+                "audio_file_path": str(rel_path),
+                "duration_seconds": round(duration, 2)
+            })
+
+        return {"dubbing_script": results}
+
+    def _handle_replication_setup(self, strategy, template, params):
+        """处理语音复刻的参考音频上传"""
+        if not isinstance(strategy, ReplicationStrategy):
+            raise TypeError("Strategy does not support replication.")
+
+        source = template.get("replication_source")
+        if not source:
+            raise ValueError("Missing 'replication_source' in template.")
+
+        ref_path = self.shared_root_path / source['audio_path']
+        ref_text = source['text']
+
+        self.logger.info(f"Uploading reference audio: {ref_path}")
+        ref_id = strategy.upload_reference_audio(ref_path, ref_text)
+        params['reference_audio_id'] = ref_id
+
+    def _merge_audio_files_ffmpeg(self, paths: List[Path], output_path: Path) -> float:
+        """
+        使用 FFmpeg Concat Demuxer 拼接音频文件。
+        """
+        if not paths: return 0.0
+
+        # 1. 创建 filelist.txt
+        list_file_path = output_path.parent / f"{output_path.stem}_list.txt"
+
+        try:
+            with list_file_path.open("w", encoding="utf-8") as f:
+                for p in paths:
+                    # 必须使用 forward slash，即使在 Windows 上
+                    f.write(f"file '{p.as_posix()}'\n")
+
+            # 2. 构建 FFmpeg 命令
+            cmd = [
+                "ffmpeg",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(list_file_path),
+                "-y",
+                str(output_path)
+            ]
+
+            # 3. 执行命令
+            result = subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+
+            # 4. 获取时长
+            duration = self._get_duration_ffprobe(output_path)
+            return duration
+
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.decode() if e.stderr else str(e)
+            raise RuntimeError(f"FFmpeg command failed: {error_msg}")
+        finally:
+            # 清理列表文件
+            if list_file_path.exists():
+                list_file_path.unlink()
+
+    def _get_duration_ffprobe(self, file_path: Path) -> float:
+        """使用 ffprobe 获取媒体文件时长"""
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(file_path)
+        ]
+        try:
+            result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return float(result.stdout.decode().strip())
+        except Exception as e:
+            self.logger.warning(f"Failed to get duration for {file_path}: {e}")
+            return 0.0
+
+    def _cleanup_temp_files(self, paths: List[Path]):
+        for p in paths:
+            try:
+                if p.exists(): p.unlink()
+            except Exception as e:
+                self.logger.warning(f"Failed to delete temp file {p}: {e}")

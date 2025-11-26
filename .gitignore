@@ -60,3 +60,6 @@ conf/gcp-credentials.json
 
 # distrubution目录
 dist/
+
+# 测试数据
+tests/testdata/

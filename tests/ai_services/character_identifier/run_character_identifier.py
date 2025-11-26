@@ -18,8 +18,11 @@ def main():
     settings, logger = bootstrap_local_env_and_logger(project_root)
 
     # --- [执行层的职责] 1. 定义所有路径 ---
-    input_blueprint_path = project_root / "shared_media" / "resources" / "tests" / "testdata" / "narrative_blueprint_28099a52_KRe4vd0.json"
-    output_dir = project_root / "shared_media" / "resources" / "tests" / "local_test_result" / "character_facts"
+    # [修改] 指向 tests/testdata，不再指向 shared_media
+    input_blueprint_path = project_root / "tests" / "testdata" / "narrative_blueprint_28099a52_KRe4vd0.json"
+
+    # [修改] 输出目录保持在 shared_media，但建议结构化
+    output_dir = project_root / "shared_media" / "outputs" / "character_facts"
     output_dir.mkdir(parents=True, exist_ok=True)
     prompts_dir = project_root / 'ai_services' / 'analysis' / 'character' / 'prompts'
 

@@ -194,7 +194,7 @@ def main():
 
     # 3. 实例化 Enhancer
     # 指向您的本地蓝图文件
-    blueprint_path = project_root / "shared_media/resources/tests/testdata/narrative_blueprint_28099a52_KRe4vd0.json"
+    blueprint_path = project_root / "tests/testdata/narrative_blueprint_28099a52_KRe4vd0.json"
     enhancer = ContextEnhancer(blueprint_path, logger)
 
     # 4. 执行增强

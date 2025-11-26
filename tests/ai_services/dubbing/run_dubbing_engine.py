@@ -1,5 +1,5 @@
-# tests/dubbing/run_dubbing_engine_v2.py
-# 描述: [Engine V2 集成测试] 验证切分、风格注入及 FFmpeg 拼接逻辑
+# tests/dubbing/run_dubbing_engine.py
+# 描述: [Engine 集成测试] 验证切分、风格注入及 FFmpeg 拼接逻辑
 #       不依赖真实 API，使用 Mock 策略生成音频。
 
 import sys
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 # 1. 路径引导 [修正]
-# 文件位于: VisifyStoryStudio/tests/dubbing/run_dubbing_engine_v2.py
+# 文件位于: VisifyStoryStudio/tests/dubbing/run_dubbing_engine.py
 # parents[0] = dubbing
 # parents[1] = tests
 # parents[2] = VisifyStoryStudio (Project Root)
@@ -20,7 +20,7 @@ project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 from utils.local_execution_bootstrap import bootstrap_local_env_and_logger
-from ai_services.dubbing.dubbing_engine_v2 import DubbingEngineV2
+from ai_services.dubbing.dubbing_engine import DubbingEngine
 from ai_services.dubbing.strategies.base_strategy import TTSStrategy
 
 
@@ -84,7 +84,7 @@ def main():
         "这是一个非常长的测试句子，用于验证切分器的逻辑是否正常工作。"
         "我们希望这段话被切分成多个小片段，然后分别送入模拟的TTS引擎生成音频。"
         "生成完毕后，FFmpeg应该能够将这些零散的片段无缝拼接成一个完整的文件。"
-        "如果这一步成功了，说明我们的V2引擎已经具备了处理长篇解说词的能力，"
+        "如果这一步成功了，说明我们的引擎已经具备了处理长篇解说词的能力，"
         "无论多长的文案都能从容应对！"
     )
 
@@ -122,7 +122,7 @@ def main():
 
     metadata_dir = project_root / "ai_services" / "dubbing" / "metadata"
 
-    engine = DubbingEngineV2(
+    engine = DubbingEngine(
         logger=logger,
         work_dir=work_dir,
         strategies=strategies,
@@ -132,7 +132,7 @@ def main():
     )
 
     # 7. 执行生成
-    logger.info(">>> 开始执行 DubbingEngine V2 测试...")
+    logger.info(">>> 开始执行 DubbingEngine 测试...")
 
     try:
         # 我们传入 style='suspense' 来覆盖 input_data 中的 'humorous'，验证参数优先级

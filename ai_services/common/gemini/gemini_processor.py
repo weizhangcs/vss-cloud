@@ -56,7 +56,23 @@ class GeminiProcessor:
         self.logger = logger
         self.debug_mode = debug_mode
         self.debug_dir = Path(debug_dir)
-        self.log_dir = Path(debug_dir) if debug_dir else None
+
+        # [修改] 2. 增加路径自动收敛逻辑
+        if self.debug_mode:
+            if debug_dir:
+                self.debug_dir = Path(debug_dir)
+            else:
+                # 如果开启调试但未指定路径，强制收敛到 shared_media/logs/gemini_debug
+                # 注意：这里假设运行目录是项目根目录，或者通过相对路径访问
+                self.debug_dir = Path("shared_media/logs/gemini_debug")
+                # 可选：打印一条警告日志，提示使用了默认路径
+                # self.logger.warning(f"Debug mode on but no path provided. Using default: {self.debug_dir}")
+
+            self.log_dir = self.debug_dir
+        else:
+            self.debug_dir = None
+            self.log_dir = None
+
         self.caller_class = caller_class or self._get_caller_class_name()
         # 创建一个基于调用者和时间的会话ID，用于日志文件名
         self.session_id = f"{self.caller_class}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
