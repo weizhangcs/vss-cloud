@@ -1,11 +1,11 @@
-# tests/run_narration_generator_v2.py
-# 描述: [终极集成测试] 验证 Narration Generator V2 的全链路编排能力
+# tests/run_narration_generator.py
+# 描述: [终极集成测试] 验证 Narration Generator 的全链路编排能力
 #       包含 10+ 个覆盖各种边缘情况和参数组合的测试用例。
 #
 # 用法:
-#   1. 运行所有测试: python tests/run_narration_generator_v2.py
-#   2. 运行特定测试: python tests/run_narration_generator_v2.py --case Case_A_Deep_Emotion
-#   3. 列出所有测试: python tests/run_narration_generator_v2.py --list
+#   1. 运行所有测试: python tests/run_narration_generator.py
+#   2. 运行特定测试: python tests/run_narration_generator.py --case Case_A_Deep_Emotion
+#   3. 列出所有测试: python tests/run_narration_generator.py --list
 
 import sys
 import json
@@ -22,7 +22,7 @@ from utils.local_execution_bootstrap import bootstrap_local_env_and_logger
 
 # 导入依赖组件
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.narration.narration_generator_v2 import NarrationGeneratorV2
+from ai_services.narration.narration_generator import NarrationGenerator
 
 # ==============================================================================
 # 测试用例定义 (10个典型场景)
@@ -188,7 +188,7 @@ TEST_CASES = [
 
 def main():
     # 1. 解析命令行参数
-    parser = argparse.ArgumentParser(description="Narration Generator V2 集成测试套件")
+    parser = argparse.ArgumentParser(description="Narration Generator 集成测试套件")
     parser.add_argument("--case", type=str, help="指定运行的测试用例名称 (e.g., Case_A_Deep_Emotion)")
     parser.add_argument("--list", action="store_true", help="列出所有可用测试用例并退出")
     args = parser.parse_args()
@@ -204,13 +204,14 @@ def main():
     settings, logger = bootstrap_local_env_and_logger(project_root)
 
     # 3. 定义资源路径
-    blueprint_path = project_root / "shared_media" / "resources" / "tests" / "testdata" / "narrative_blueprint_28099a52_KRe4vd0.json"
+    blueprint_path = project_root / "tests" / "testdata" / "narrative_blueprint_28099a52_KRe4vd0.json"
     narration_base = project_root / "ai_services" / "narration"
     prompts_dir = narration_base / "prompts"
     metadata_dir = narration_base / "metadata"
     rag_schema_path = project_root / "ai_services" / "rag" / "metadata" / "schemas.json"
 
-    output_dir = project_root / "shared_media" / "resources" / "tests" / "local_test_result" / "narration_v2"
+    # [修改] 输出目录归整到 shared_media/outputs/
+    output_dir = project_root / "shared_media" / "outputs" / "narration_v2_test_result"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # 4. 初始化服务
@@ -219,11 +220,12 @@ def main():
         api_key=settings.GOOGLE_API_KEY,
         logger=logger,
         debug_mode=settings.DEBUG,
-        debug_dir=output_dir / "debug_logs"
+        # [修改] 调试日志指向 shared_media/logs
+        debug_dir=project_root / "shared_media" / "logs" / "narration_v2_debug"
     )
 
-    logger.info("正在初始化 NarrationGeneratorV2...")
-    generator = NarrationGeneratorV2(
+    logger.info("正在初始化 NarrationGenerator...")
+    generator = NarrationGenerator(
         project_id=settings.GOOGLE_CLOUD_PROJECT,
         location=settings.GOOGLE_CLOUD_LOCATION,
         prompts_dir=prompts_dir,

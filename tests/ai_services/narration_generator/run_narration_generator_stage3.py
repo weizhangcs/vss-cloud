@@ -101,7 +101,7 @@ def main():
         api_key=settings.GOOGLE_API_KEY,
         logger=logger,
         debug_mode=True,
-        debug_dir=project_root / "logs" / "narration_debug"
+        debug_dir=project_root / "shared_media" / "logs" / "narration_debug"
     )
 
     prompts_dir = project_root / "ai_services" / "narration" / "prompts"

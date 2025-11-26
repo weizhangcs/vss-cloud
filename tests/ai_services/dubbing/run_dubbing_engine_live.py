@@ -1,5 +1,5 @@
-# tests/ai_services/dubbing/run_dubbing_engine_v2_live.py
-# 描述: [Live Debug] Dubbing Engine V2 实时调试脚本
+# tests/ai_services/dubbing/run_dubbing_engine_live.py
+# 描述: [Live Debug] Dubbing Engine 实时调试脚本
 #       用于排查长句切分后 API 调用是否完整，以及音频拼接是否正常。
 
 import sys
@@ -15,7 +15,7 @@ project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 from utils.local_execution_bootstrap import bootstrap_local_env_and_logger
-from ai_services.dubbing.dubbing_engine_v2 import DubbingEngineV2
+from ai_services.dubbing.dubbing_engine import DubbingEngine
 from ai_services.dubbing.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy
 
 
@@ -88,7 +88,7 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
 
     # 4. 组装依赖
-    logger.info("正在组装 DubbingEngineV2...")
+    logger.info("正在组装 DubbingEngine...")
 
     # 4.1 策略
     if not settings.PAI_EAS_SERVICE_URL:
@@ -103,7 +103,7 @@ def main():
 
     # 4.2 模板 (Mock 一个使用 replication 的模板)
     # 注意：这里我们需要一个真实的参考音频路径
-    ref_audio_rel_path = "resources/tts_references/zero_shot_prompt.wav"
+    ref_audio_rel_path = "ai_services/dubbing/reference/zero_shot_prompt.wav"
     ref_audio_abs_path = project_root / "shared_media" / ref_audio_rel_path
 
     if not ref_audio_abs_path.exists():
@@ -127,7 +127,7 @@ def main():
     metadata_dir = project_root / "ai_services" / "dubbing" / "metadata"
 
     # 5. 实例化引擎
-    engine = DubbingEngineV2(
+    engine = DubbingEngine(
         logger=logger,
         work_dir=work_dir,
         strategies=strategies,

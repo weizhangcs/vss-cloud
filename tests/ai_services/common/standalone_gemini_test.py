@@ -45,7 +45,7 @@ def run_standalone_test():
             api_key=settings.GOOGLE_API_KEY,
             logger=logger,
             debug_mode=True,  # 开启调试，方便查看请求日志
-            debug_dir=project_root / "output" / "character_facts_test"  # 日志将输出到项目根目录下
+            debug_dir=project_root / "shared_media" / "logs" / "character_facts_test_debug"
         )
         logger.info(f"Processor 初始化完成。正在尝试调用模型: {MODEL_NAME}")
 

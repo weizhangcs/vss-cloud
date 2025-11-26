@@ -1,6 +1,4 @@
-# 文件路径: ai_services/narration/narration_generator.py
-# 描述: [重构后] 解说词生成器服务，已完全解耦。
-# 版本: 2.0 (Decoupled & Reviewed)
+# ai_services/narration/narration_generator.py
 
 import json
 import logging
@@ -11,163 +9,263 @@ from typing import Dict, Any, List
 import vertexai
 from vertexai import rag
 
-# 导入项目内部依赖
+# 基础组件
 from ai_services.common.gemini.ai_service_mixin import AIServiceMixin
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
+from ai_services.rag.schemas import load_i18n_strings
+
+# 核心组件
+from .query_builder import NarrationQueryBuilder
+from .context_enhancer import ContextEnhancer
+from .validator import NarrationValidator
 
 
 class NarrationGenerator(AIServiceMixin):
     """
-    [重构后] 基于RAG知识库，生成带溯源信息的视频解说词。
-    本服务已解耦，所有配置和依赖通过构造函数注入。
+    智能解说词生成服务。
+
+    架构特点:
+        采用 "Query -> Enhance -> Synthesize -> Refine" 四段式流水线。
+        支持有目的检索、本地上下文增强、风格化生成以及基于时长的自动缩写校验。
     """
     SERVICE_NAME = "narration_generator"
+
+    # 最大重试缩写次数，防止死循环
+    MAX_REFINE_RETRIES = 2
 
     def __init__(self,
                  project_id: str,
                  location: str,
                  prompts_dir: Path,
+                 metadata_dir: Path,
+                 rag_schema_path: Path,
                  logger: logging.Logger,
                  work_dir: Path,
                  gemini_processor: GeminiProcessor):
-        """
-        初始化解说词生成器服务。
 
-        Args:
-            project_id (str): Google Cloud Project ID.
-            location (str): Google Cloud Location (e.g., "us-central1").
-            prompts_dir (Path): 包含此服务所需prompt模板的目录路径。
-            logger (logging.Logger): 一个已配置好的日志记录器实例。
-            work_dir (Path): 服务的工作目录，用于存储调试文件等。
-            gemini_processor (GeminiProcessor): AI通信处理器实例。
-        """
-        # 核心依赖
         self.project_id = project_id
         self.location = location
+        self.prompts_dir = prompts_dir
+        self.metadata_dir = metadata_dir
         self.logger = logger
         self.work_dir = work_dir
-        self.prompts_dir = prompts_dir
         self.gemini_processor = gemini_processor
 
-        # 初始化Vertex AI
+        # 初始化 Vertex AI
         vertexai.init(project=self.project_id, location=self.location)
-        self.logger.info("NarrationGenerator Service initialized (decoupled).")
+
+        # 加载全局资源
+        load_i18n_strings(rag_schema_path)
+        self.styles_config = self._load_json_config("styles.json")
+        self.perspectives_config = self._load_json_config("perspectives.json")
+        self.query_templates = self._load_json_config("query_templates.json")
+
+        self.logger.info("NarrationGenerator initialized (Full Configuration).")
+
+    def _load_json_config(self, filename: str) -> Dict:
+        """加载 metadata 目录下的 JSON 配置文件"""
+        path = self.metadata_dir / filename
+        if path.is_file():
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        return {}
 
     def _get_rag_corpus(self, corpus_display_name: str) -> Any:
-        """获取对指定RAG语料库的引用，如果找不到则抛出异常。"""
-        try:
-            self.logger.info(f"正在查找RAG语料库: '{corpus_display_name}'...")
-            corpora = rag.list_corpora()
-            corpus = next((c for c in corpora if c.display_name == corpus_display_name), None)
-            if not corpus:
-                raise RuntimeError(f"错误: 未能找到名为 '{corpus_display_name}' 的RAG语料库。")
-            self.logger.info(f"成功连接到RAG语料库: {corpus.name}")
-            return corpus
-        except Exception as e:
-            self.logger.error(f"连接RAG语料库时出错: {e}", exc_info=True)
-            raise
+        """根据显示名称获取 RAG Corpus 引用"""
+        corpora = rag.list_corpora()
+        corpus = next((c for c in corpora if c.display_name == corpus_display_name), None)
+        if not corpus:
+            raise RuntimeError(f"RAG Corpus not found: '{corpus_display_name}'")
+        return corpus
 
-    def execute(self, series_name: str, corpus_display_name: str, total_scene_count: int, **kwargs) -> Dict[str, Any]:
+    def execute(self,
+                asset_name: str,
+                corpus_display_name: str,
+                blueprint_path: Path,
+                config: Dict[str, Any],
+                asset_id: str) -> Dict[str, Any]:
         """
-        为整个剧集执行解说词生成任务。
-
-        Args:
-            series_name (str): 剧集/故事的名称，用于生成查询。
-            corpus_display_name (str): 要查询的目标RAG语料库的显示名称。
-            total_scene_count (int): 剧本中的总场景数（RAG Chunk数量），用于 top_k 优化。
-            **kwargs: 其他可选参数 (如 model, temp, lang, rag_top_k, debug)。
-
-        Returns:
-            Dict[str, Any]: 包含解说词脚本和元数据的字典。
+        执行生成流程主入口。
         """
-        try:
-            # 从 kwargs 中获取参数，并设置最大性能上限
-            RAG_MAX_CAP = kwargs.get('rag_max_cap', 100)  # 使用 YAML/用户设定的性能上限
+        self.logger.info(f"Starting Generation for: {asset_name} (Asset: {asset_id})")
 
-            # 1. 获取请求的 top_k 值 (用户参数 > YAML默认值)
-            requested_top_k = kwargs.get('rag_top_k', kwargs.get('default_rag_top_k', RAG_MAX_CAP))
+        # ==================================================================
+        # Stage 1: Intent-Based Retrieval (有目的检索)
+        # ==================================================================
+        qb = NarrationQueryBuilder(self.metadata_dir, self.logger)
+        query = qb.build(asset_name, config)
 
-            # 2. 应用业务逻辑: 必须检索所有上下文，但不能超过性能上限
-            if total_scene_count <= RAG_MAX_CAP:
-                # 场景数少于上限，必须检索所有场景，确保元数据不丢失
-                final_top_k = total_scene_count
-            else:
-                # 场景数过多，应用性能上限，同时尊重用户传入的 top_k
-                final_top_k = min(requested_top_k, RAG_MAX_CAP)
+        rag_corpus = self._get_rag_corpus(corpus_display_name)
+        top_k = config.get("rag_top_k", 50)
 
-            self.logger.info(f"RAG Retrieval Contexts: Total Scenes={total_scene_count}, Final Top K={final_top_k}")
+        self.logger.info(f"Retrieving from RAG (top_k={top_k})...")
+        retrieval_response = rag.retrieval_query(
+            rag_resources=[rag.RagResource(rag_corpus=rag_corpus.name)],
+            text=query,
+            rag_retrieval_config=rag.RagRetrievalConfig(top_k=top_k),
+        )
+        raw_chunks = retrieval_response.contexts.contexts
 
-            # 步骤 1: 连接到RAG语料库
-            rag_corpus = self._get_rag_corpus(corpus_display_name)
+        # ==================================================================
+        # Stage 2: Context Enhancement (本地时序增强)
+        # ==================================================================
+        enhancer = ContextEnhancer(blueprint_path, self.logger)
+        enhanced_context = enhancer.enhance(raw_chunks, config, asset_id=asset_id)
 
-            # 步骤 2: 生成一个针对整个故事的宏观查询
-            query_text = f"为剧集“{series_name}”生成一份完整的剧情解说词，请提供所有相关的场景资料。"
+        if not enhanced_context or "No relevant scenes" in enhanced_context:
+            self.logger.warning("Context enhancement resulted in empty content.")
+            return {"narration_script": [], "metadata": {"status": "empty_context"}}
 
-            # 步骤 3: 从RAG检索上下文
-            retrieved_docs = self._query_rag_engine(rag_corpus, query_text, top_k=final_top_k)
-            if not retrieved_docs:
-                self.logger.warning(f"未能为剧集 '{series_name}' 从RAG中检索到任何信息。")
-                # 返回一个特定的结构体，而不是抛出异常
-                return {"narration_script": [], "metadata": {"status": "skipped", "message": "No data found in RAG."}}
+        # ==================================================================
+        # Stage 3: Synthesis (风格化合成)
+        # ==================================================================
+        lang = config.get("lang", "zh")
+        control = config.get("control_params", {})
 
-            context = self._assemble_context_from_retrievals(retrieved_docs)
+        # 3.1 组装 Perspective (视角)
+        perspective_key = control.get("perspective", "third_person")
+        persp_templates = self.perspectives_config.get(lang, self.perspectives_config.get("en", {}))
+        perspective_text = persp_templates.get(perspective_key, persp_templates.get("third_person", ""))
 
-            if kwargs.get('debug', False):
-                debug_dir = self.work_dir / "_debug_artifacts"
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                (debug_dir / f"{series_name}_narration_rag_context.txt").write_text(context, encoding='utf-8')
+        if perspective_key == "first_person":
+            char_name = control.get("perspective_character", "主角")
+            perspective_text = perspective_text.replace("{character}", char_name)
 
-            # 步骤 4: 调用LLM生成结构化解说词
-            self.logger.info("正在调用LLM生成解说词...")
+        # 3.2 组装 Style (风格)
+        style_key = control.get("style", "objective")
+        style_templates = self.styles_config.get(lang, self.styles_config.get("en", {}))
+        style_text = style_templates.get(style_key, style_templates.get("objective", ""))
 
-            # [修改点] 优先从 kwargs (含配置) 中获取 default_lang，若无则回退到 'en'
-            # 优先级: API请求参数 > YAML配置 > 代码硬编码
-            current_lang = kwargs.get('lang', kwargs.get('default_lang', 'en'))
+        # 3.3 组装 Narrative Focus (叙事目标)
+        focus_key = control.get("narrative_focus", "general")
+        query_lang_pack = self.query_templates.get(lang, self.query_templates.get("en", {}))
+        focus_templates = query_lang_pack.get("focus", {})
+        focus_desc = focus_templates.get(focus_key, focus_templates.get("general", ""))
+        narrative_focus_text = focus_desc.replace("{asset_name}", asset_name)
 
-            prompt = self._build_prompt(
-                prompt_name='narration_generator',
-                lang=current_lang,  # <-- 使用处理后的语言变量
-                rag_context=context
-            )
-            response_data, usage = self.gemini_processor.generate_content(
-                # 从 kwargs 中获取 model 和 temp，不再使用硬编码的默认值
-                model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
-                prompt=prompt,
-                temperature=kwargs.get('default_temp', 0.3)
-            )
-            self.logger.info("LLM已成功返回解说词数据。")
+        # [注入] 总时长控制 (Duration Constraint)
+        target_duration_min = control.get("target_duration_minutes")
+        if target_duration_min:
+            duration_tpl = query_lang_pack.get("duration_constraint", "")
+            if duration_tpl:
+                narrative_focus_text += "\n" + duration_tpl.format(minutes=target_duration_min)
 
-            # 步骤 5: 构建并返回最终结果
-            final_output = {
-                "generation_date": datetime.now().isoformat(),
-                "series_name": series_name,
-                "source_corpus": corpus_display_name,
-                "narration_script": response_data.get("narration_script", []),
-                "ai_total_usage": usage
-            }
-            return final_output
+        # 3.4 组装最终 Prompt
+        base_prompt_template = self._load_prompt_template(lang, "narration_generator")
+        final_prompt = base_prompt_template.format(
+            perspective=perspective_text,
+            style=style_text,
+            narrative_focus=narrative_focus_text,
+            rag_context=enhanced_context
+        )
 
-        except Exception as e:
-            self.logger.critical(f"为 '{series_name}' 生成解说词时失败: {e}", exc_info=True)
-            raise
+        self.logger.info(f"Invoking Gemini [Style: {style_key}, Perspective: {perspective_key}]...")
+        response_data, usage = self.gemini_processor.generate_content(
+            model_name=config.get("model", "gemini-2.5-flash"),
+            prompt=final_prompt,
+            temperature=0.7
+        )
 
-    def _query_rag_engine(self, rag_corpus: Any, query: str, top_k: int) -> List[str]:
-        """执行对Vertex AI RAG引擎的查询并返回文档内容。"""
-        self.logger.info(f"正在向RAG引擎查询 (top_k={top_k}): '{query[:70]}...'")
-        try:
-            response = rag.retrieval_query(
-                rag_resources=[rag.RagResource(rag_corpus=rag_corpus.name)],
-                text=query,
-                rag_retrieval_config=rag.RagRetrievalConfig(top_k=top_k),
-            )
-            all_chunks_text = [context.text for context in response.contexts.contexts]
-            self.logger.info(f"成功从RAG检索到 {len(all_chunks_text)} 个相关文档片段。")
-            return all_chunks_text
-        except Exception as e:
-            self.logger.error(f"查询RAG引擎时失败: {e}", exc_info=True)
-            return []
+        initial_script = response_data.get("narration_script", [])
 
-    def _assemble_context_from_retrievals(self, snippets: List[str]) -> str:
-        """将检索到的文档片段列表拼接成一个大的字符串上下文。"""
-        separator = "\n\n" + "=" * 50 + "\n[下一个相关场景资料]\n" + "=" * 50 + "\n\n"
-        return separator.join(snippets)
+        # ==================================================================
+        # Stage 4: Validation & Refinement (校验与精调)
+        # ==================================================================
+        with blueprint_path.open('r', encoding='utf-8') as f:
+            blueprint_data = json.load(f)
+
+        validator = NarrationValidator(blueprint_data, config, self.logger)
+
+        # 执行校验循环
+        refined_script = self._validate_and_refine(
+            initial_script, validator, config, style_text, lang
+        )
+
+        return {
+            "generation_date": datetime.now().isoformat(),
+            "asset_name": asset_name,
+            "config_snapshot": config,
+            "narration_script": refined_script,
+            "ai_total_usage": usage
+        }
+
+    def _validate_and_refine(self, script: List[Dict], validator: NarrationValidator,
+                             config: Dict, style_text: str, lang: str) -> List[Dict]:
+        """
+        逐条校验生成的脚本，若时长溢出则调用 AI 进行缩写。
+        """
+        self.logger.info(f"Starting Stage 4: Validation & Refinement for {len(script)} snippets...")
+        final_script = []
+
+        # 加载缩写专用的 .txt 模版
+        refine_template = self._load_prompt_template(lang, "narration_refine")
+
+        for index, snippet in enumerate(script):
+            is_valid, info = validator.validate_snippet(snippet)
+
+            if is_valid:
+                snippet["metadata"] = info
+                final_script.append(snippet)
+                continue
+
+            self.logger.warning(f"Snippet {index} failed validation: {info}. Attempting refinement...")
+            current_text = snippet["narration"]
+
+            # 计算目标字数上限
+            max_allowed_chars = int(info["real_visual_duration"] * validator.speaking_rate)
+
+            is_valid_now = False
+
+            # 进入重试循环
+            for attempt in range(self.MAX_REFINE_RETRIES):
+                try:
+                    refine_prompt = refine_template.format(
+                        style=style_text,
+                        original_text=current_text,
+                        max_seconds=info["real_visual_duration"],
+                        max_chars=max_allowed_chars
+                    )
+
+                    # 调用 AI (Prompt 中已包含 JSON 格式要求)
+                    refine_response_json, _ = self.gemini_processor.generate_content(
+                        model_name=config.get("model", "gemini-2.5-flash"),
+                        prompt=refine_prompt,
+                        temperature=0.3  # 低温以确保遵循约束
+                    )
+
+                    new_text = refine_response_json.get("refined_text", "")
+                    if not new_text:
+                        raise ValueError("Empty refinement result from LLM")
+
+                    # 再次校验新文本
+                    snippet["narration"] = new_text
+                    is_valid_now, new_info = validator.validate_snippet(snippet)
+
+                    if is_valid_now:
+                        self.logger.info(f"Snippet {index} refined successfully on attempt {attempt + 1}.")
+                        snippet["metadata"] = new_info
+                        snippet["metadata"]["refined"] = True
+                        final_script.append(snippet)
+                        break
+                    else:
+                        self.logger.warning(
+                            f"Refinement attempt {attempt + 1} failed: Still overflow ({new_info['overflow_sec']}s).")
+                        # 更新状态，准备下一次重试
+                        current_text = new_text
+                        info = new_info
+
+                except Exception as e:
+                    self.logger.error(f"Error during refinement attempt {attempt + 1}: {e}")
+
+            # 如果重试耗尽仍未通过，保留最后一次结果并标记错误
+            if not is_valid_now:
+                self.logger.error(
+                    f"Snippet {index} failed refinement after {self.MAX_REFINE_RETRIES} retries. Keeping last version.")
+                snippet["metadata"] = info
+                snippet["metadata"]["validation_error"] = "Duration Overflow"
+                # 确保 narration 字段存的是最后一次尝试的文本
+                if current_text != snippet["narration"]:
+                    snippet["narration"] = current_text
+                final_script.append(snippet)
+
+        return final_script

@@ -21,10 +21,10 @@ from django.conf import settings
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
 from ai_services.common.gemini.cost_calculator import CostCalculator
 from ai_services.analysis.character.character_identifier import CharacterIdentifier
-from ai_services.narration.narration_generator_v2 import NarrationGeneratorV2
+from ai_services.narration.narration_generator import NarrationGenerator
 from ai_services.editing.broll_selector_service import BrollSelectorService
 
-from ai_services.dubbing.dubbing_engine_v2 import DubbingEngineV2
+from ai_services.dubbing.dubbing_engine import DubbingEngine
 from ai_services.dubbing.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy # <-- [新增]
 from ai_services.dubbing.strategies.base_strategy import TTSStrategy
 
@@ -167,7 +167,7 @@ def _handle_narration_generation(task: Task) -> dict:
     # 定义 V2 所需的元数据路径
     narration_base = settings.BASE_DIR / 'ai_services' / 'narration'
 
-    generator_v2 = NarrationGeneratorV2(
+    generator_v2 = NarrationGenerator(
         project_id=settings.GOOGLE_CLOUD_PROJECT,
         location=settings.GOOGLE_CLOUD_LOCATION,
         prompts_dir=narration_base / 'prompts',
@@ -511,7 +511,7 @@ def _handle_dubbing_generation(task: Task) -> dict:
     metadata_dir = settings.BASE_DIR / 'ai_services' / 'dubbing' / 'metadata'
 
     # 4. 实例化 DubbingEngineV2
-    dubbing_service = DubbingEngineV2(
+    dubbing_service = DubbingEngine(
         logger=logger,
         work_dir=audio_work_dir,
         strategies=available_strategies,

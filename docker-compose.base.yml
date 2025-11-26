@@ -1,5 +1,6 @@
 # docker-compose.base.yml
-version: '3.8'
+# 注意：version 字段已废弃（Docker Compose v1.27+）
+# version: '1.2.0'
 
 services:
   # --- 基础服务 (所有环境通用) ---
