@@ -12,10 +12,17 @@ character_identifier:
 
 # 解说词生成服务 (NarrationGenerator)
 narration_generator:
-  default_model: "gemini-2.5-pro"
-  default_temp: 0.3
-  default_rag_top_k: 100
-  default_lang: "en"
+  # --- 服务定义参数 ---
+  lang: "zh"
+  model: "gemini-2.5-pro"
+  rag_top_k: 100
+
+  # [新增] 语速与时长控制
+  speaking_rate: 4.5       # 稍微快一点的语速
+  overflow_tolerance: 0.0 # 默认不留白，严格匹配
+
+  # --- 推理参数 ---
+  temperature: 0.3         # 对应 schemas.py 中的 temperature (若有) 或代码中使用的 temp
 
 # B-Roll 选择器服务 (BrollSelectorService)
 broll_selector_service:

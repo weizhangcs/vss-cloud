@@ -1,173 +1,151 @@
-# VSS Cloud API 参考文档：智能解说词生成服务 
+ # 智能解说词生成引擎 (Narration Generator V3) 详细设计文档
  
-服务模块: Narration Generator V2 
-适用版本: v1.2.0+ 
-更新日期: 2025-11-20 
+ 版本: 3.0 (Unified)
+ 最后更新: 2025-11-27
+ 状态: 已发布 (Released)
+ 模块路径: ai_services/narration/
  
---- 
+ ---
  
-## 1. 接口概览 
+ ## 1. 概述 (Overview)
  
-本接口用于触发智能解说词生成任务。V2 版本引入了“四段式编排引擎”（Query-Enhance-Synthesize-Refine），支持基于意图的检索、风格化生成以及声画时长的自动校验与缩写。 
+ ### 1.1 背景与目标
+ 在长视频解说或短视频切片场景中，单纯依靠 RAG（检索增强生成）往往面临“上下文碎片化”、“逻辑乱序”和“风格单一”等问题。
+ Narration Generator V3 旨在通过引入 **“四段式编排架构” (Four-Stage Orchestration)** 和 **“配置优先 (Config-First)”** 的设计思想，将非结构化的剧情素材转化为高质量、风格化且严格符合声画时长的视频解说文案。
  
-* API 端点: POST /api/v1/tasks/ 
-* 认证方式: Header 需包含 X-Instance-ID 和 X-Api-Key 
+ ### 1.2 核心能力
+ * **有目的检索**: 基于用户意图（情感/悬疑/搞事业）动态构建查询，而非千篇一律的通用摘要。
+ * **时序增强**: 利用本地人工标注的蓝图数据，强制纠正 RAG 返回的乱序片段，根除逻辑幻觉。
+ * **风格化生成**: 支持动态注入人设（如“毒舌博主”、“深情电台”），并支持第一人称沉浸式解说。
+ * **策略化校验**: 不仅校验声画物理时长，还引入 `overflow_tolerance` 策略，支持“强制留白”或“激进混剪”模式。
+ * **强类型契约**: 引入 Pydantic Schema，在入口处对所有参数进行严格校验，拒绝“垃圾进，空气出”。
  
---- 
+ ---
  
-## 2. 请求结构 (Request Payload) 
+ ## 2. 系统架构 (Architecture)
  
-要创建一个解说词生成任务，需将 task_type 设置为 GENERATE_NARRATION，并构造如下 payload： 
+ ### 2.1 模块架构图 (Base-Subclass Pattern)
  
-```json 
-{ 
- "task_type": "GENERATE_NARRATION", 
- "payload": { 
- // --- [基础定位信息] --- 
- "asset_name": "总裁的契约女友", // [修正] 媒资展示名称（用于 Prompt 组装） 
- "asset_id": "98995bd5-d27e-45fe-ae62-ee46c31a84b4", // [修正] 媒资唯一 ID（用于定位 RAG 语料库）,建议采用uuid,但不强制 
+ V3 版本采用了 **模板方法模式**，将通用的 RAG 流水线逻辑下沉至基类，业务逻辑保留在子类。
  
- // --- [资源路径] (必填) --- 
- // 本蓝图文件的相对路径。通常由 Edge 端上传至 tmp/ 目录。
- "blueprint_path": "tmp/ABCDEFGH_narrative_blueprint.json",
+ ```mermaid
+ classDiagram
+     class BaseRagGenerator {
+         <<Abstract>>
+         +execute(config)
+         #_validate_config()
+         #_retrieve_from_rag()
+         #_post_process()
+     }
+     class NarrationGeneratorV3 {
+         +execute()
+         #_construct_prompt()
+         #_validate_and_refine()
+     }
+     class ContextEnhancer {
+         +enhance()
+     }
+     class NarrationValidator {
+         +validate_snippet()
+     }
+     
+     BaseRagGenerator <|-- NarrationGeneratorV3
+     NarrationGeneratorV3 --> ContextEnhancer : Use
+     NarrationGeneratorV3 --> NarrationValidator : Use
+ ```
  
- // --- [核心控制参数] (V2 引擎配置) --- 
- "service_params": { 
- "lang": "zh", // 语言 (zh/en), 默认 zh 
- "model": "gemini-2.5-flash", // 模型选择 (可选) 
- "rag_top_k": 50, // RAG 检索片段数量 (建议 50-100) 
- "speaking_rate": 4.2, // [可选] 语速校验标准 (字/秒), 默认 4.2 
+ ### 2.2 数据流图 (Data Flow Pipeline)
  
- // >>> 创作控制参数 (Control Parameters) <<< 
- "control_params": { 
- // 1. 叙事焦点 (决定 RAG 检索什么内容) 
- "narrative_focus": "general", 
+ ```mermaid
+ graph TD
+   InputJSON["API Payload (Config)"] --> Step1
+   LocalBlueprint["本地蓝图 (Narrative Blueprint)"] --> Step3
+   LocalBlueprint --> Step5
  
- // 2. 剧情范围 (决定使用哪些素材) 
- "scope": { 
- "type": "episode_range", // 范围类型 
- "value": [1, 5] // 范围值 (如第1集到第5集) 
- }, 
+   subgraph "Stage 1: Input Validation"
+     Step1["Schema Validator"] -->|强类型对象| ServiceConfig["NarrationServiceConfig"]
+   end
  
- // 3. 角色聚焦 (决定关注谁的戏份) 
- "character_focus": { 
- "mode": "specific", // 聚焦模式 
- "characters": ["车小小", "楚昊轩"] // 角色名列表 
- }, 
+   subgraph "Stage 2: Intent-Based Retrieval"
+     ServiceConfig --> Step2["Query Builder"]
+     Step2 -->|生成语义查询| RAG["Vertex AI RAG Engine"]
+     RAG -->|返回碎片化片段| RawChunks["Raw Context Chunks"]
+   end
  
- // 4. 解说风格 (决定 LLM 的语气口吻) 
- "style": "objective", 
+   subgraph "Stage 3: Context Enhancement"
+     RawChunks --> Step3["Context Enhancer"]
+     Step3 -->|清洗/排序/重组| EnhancedContext["完整有序上下文"]
+   end
  
- // 5. 视角设定 (决定第一/第三人称) 
- "perspective": "third_person", 
+   subgraph "Stage 4: Synthesis"
+     EnhancedContext --> Step4["Prompt Assembler"]
+     ServiceConfig --> Step4
+     Step4 -->|Full Prompt| LLM["Gemini 2.5"]
+     LLM -->|初稿| InitialScript["初始解说词"]
+   end
  
- // 6. 目标时长控制 (分钟) - 软约束 
- "target_duration_minutes": 5 
- } 
- } 
- } 
-} 
-``` 
+   subgraph "Stage 5: Strategic Validation"
+     InitialScript --> Step5["Validator"]
+     Step5 -->|计算时长策略| Check{Audio > Limit?}
+     Check -- No --> FinalOutput
+     Check -- Yes --> RefineLoop["Refinement Loop"]
+     RefineLoop -->|缩写指令| LLM
+     LLM -->|重写后文本| Step5
+   end
+ ```
  
---- 
+ ---
  
-## 3. 参数详解 (Control Parameters) 
+ ## 3. 详细设计 (Detailed Design)
  
-以下参数定义在 payload.service_params.control_params 中，直接控制生成器的行为。 
+ ### 3.1 Stage 1: 配置校验 (Input Validation)
+ * **输入**: Dict (来自 API Payload)
+ * **逻辑**: 使用 Pydantic 的 `NarrationServiceConfig` 进行校验。
+ * **Config-First**: `asset_name` 等上下文信息被注入 Config 对象，随流程流转，不再作为散乱参数传递。
  
-### 3.1 叙事焦点 (narrative_focus) 
+ ### 3.2 Stage 2: 有目的检索 (Query Builder)
+ * **核心**: 根据 `narrative_focus` 加载模版。
+ * **Custom 支持**: 若 `narrative_focus="custom"`，直接使用用户传入的 `custom_prompts`，支持完全自定义的检索意图。
  
-| 可选值 (Key) | 说明 | 适用场景 | 
-| :--- | :--- | :--- | 
-| general | (默认) 通用全剧剧情 | 概览、大纲、速看 | 
-| romantic_progression | 情感递进线 | CP 混剪、恋爱专题、甜虐解说 | 
-| business_success | 搞事业/复仇线 | 大女主/龙王复仇、职场逆袭 | 
-| suspense_reveal | 悬疑揭秘线 | 悬疑剧、反转盘点、细节分析 | 
-| character_growth | 个人成长弧光 | 人物传记、深度角色剖析 | 
+ ### 3.3 Stage 3: 本地时序增强 (Context Enhancer)
+ * **溯源 (Tracing)**: 解析 RAG 返回的 GCS URI 提取 Scene ID。
+ * **排序 (Sorting)**: 强制利用本地蓝图的 Timeline 纠正 RAG 的乱序。
+ * **重组 (Reconstruction)**: 丢弃 RAG 的文本碎片，加载本地 Scene 完整数据，消除幻觉。
  
-### 3.2 剧情范围 (scope) 
+ ### 3.4 Stage 4: 风格化合成 (Synthesis)
+ * **Prompt 组装**:
+     * **风格/视角**: 从 `prompt_definitions.json` 加载。
+     * **时长翻译**: 自动将业务层面的“3分钟”需求，换算为技术层面的“约X字”指令（`Minutes * 60 * SpeakingRate`），消除 LLM 对时间概念的模糊性。
+ * **防御性清洗**: 内置正则清洗器 `_sanitize_text`，自动剔除 LLM 输出的舞台指示（如 `（音乐起）`），保护下游 TTS。
  
-V2 引擎利用本地 blueprint_path 中的数据进行精确过滤。 
+ ### 3.5 Stage 5: 策略化校验 (Strategic Validator)
+ * **传统校验**: 仅比对 `Audio Duration > Visual Duration`。
+ * **策略化校验 (V3)**: 引入 `overflow_tolerance` 比例系数。
+     * **公式**: `Limit = Visual * (1 + tolerance)`
+     * **场景 A (解说)**: 设为 `-0.15`，强制预留 15% 画面空隙。
+     * **场景 B (混剪)**: 设为 `+0.20`，允许音频稍长，后续填充 B-Roll。
  
-| 类型 (type) | 值 (value) | 说明 | 
-| :--- | :--- | :--- | 
-| full | (无) | (默认) 全剧范围。 | 
-| episode_range | [start, end] | 推荐。仅保留指定集数范围内的场景（闭区间）。例如 [1, 10]。 | 
+ ---
  
-### 3.3 角色聚焦 (character_focus) 
+ ## 4. 配置说明 (Configuration)
  
-| 模式 (mode) | 角色列表 (characters) | 说明 | 
-| :--- | :--- | :--- | 
-| all | (忽略) | (默认) 关注所有主要角色。 | 
-| specific | ["角色A", "角色B"] | 强指令。Query 会显式要求提取这些角色的互动。 | 
+ ### 4.1 配置文件结构 (ai_services/narration/metadata/)
  
-### 3.4 解说风格 (style) 
+ * **query_templates.json**: 
+     * 用途: RAG 检索阶段。
+     * 内容: 定义 narrative_focus 到 Query 的映射。
+ * **prompt_definitions.json**: 
+     * 用途: LLM 生成阶段。
+     * 内容: 聚合了 `styles`, `perspectives`, `constraints` (时长/字数模版)。
  
-| 可选值 (Key) | 风格描述 | 
-| :--- | :--- | 
-| objective | (默认) 客观冷静，纪录片风。 | 
-| humorous | 幽默吐槽，短视频风。 | 
-| emotional | 深情细腻，电台情感风。 | 
-| suspense | 悬疑解密，层层剥茧。 | 
+ ### 4.2 Prompt 模板 (ai_services/narration/prompts/)
  
-### 3.5 视角 (perspective) 
+ * `narration_generator_{lang}.txt`: 核心生成模版。
+ * `narration_refine_{lang}.txt`: 缩写修正模版。
  
-| 可选值 | 说明 | 额外参数 | 
-| :--- | :--- | :--- | 
-| third_person | (默认) 上帝视角。 | 无 | 
-| first_person | 角色沉浸式自述。 | 需提供 perspective_character: "角色名" | 
+ ---
  
-### 3.6 目标时长 (target_duration_minutes) 
+ ## 5. 成本与可观测性
  
-* 类型: int (分钟) 
-* 作用: 
- 1. Prompt 约束: 告知 AI 期望的篇幅。 
- 2. 配合 Validation: 辅助系统进行字数预估。 
- 
---- 
- 
-## 4. 自动校验与重写 (Validation & Refinement) 
- 
-系统内置了声画对位校验机制（Stage 4），无需额外配置。 
- 
-1. 校验逻辑: 系统计算每一段解说词的 预估朗读时长 (基于 speaking_rate) vs 对应画面的物理时长 (基于 source_scene_ids)。 
-2. 自动重写: 如果 Audio Duration > Visual Duration，系统会自动触发 LLM 进行 缩写 (Refinement)，并强制保持原有风格。 
-3. 结果标记: 经过缩写的片段，在返回的 JSON metadata 中会包含 refined: true 标记。 
- 
---- 
- 
-## 5. 调用配方 (Recipes) 
- 
-### 配方 A：5分钟全剧速看 (标准长视频) 
-```json 
-"control_params": { 
- "narrative_focus": "general", 
- "scope": { "type": "episode_range", "value": [1, 30] }, 
- "style": "objective", 
- "target_duration_minutes": 5 
-} 
-``` 
- 
-### 配方 B：1分钟甜宠短视频 (抖音/TikTok) 
-```json 
-"control_params": { 
- "narrative_focus": "romantic_progression", 
- "scope": { "type": "episode_range", "value": [1, 5] }, 
- "character_focus": { "mode": "specific", "characters": ["车小小", "楚昊轩"] }, 
- "style": "humorous", 
- "target_duration_minutes": 1 
-} 
-```
- 
- 
-### 配方 C：角色第一人称自述 (人物志) 
-```json 
-"control_params": { 
- "narrative_focus": "character_growth", 
- "scope": { "type": "full" }, 
- "character_focus": { "mode": "specific", "characters": ["车小小"] }, 
- "style": "emotional", 
- "perspective": "first_person", 
- "perspective_character": "车小小" 
-} 
-```
+ * **计费 (Billing)**: 集成 `CostCalculator`，基于 Vertex AI 最新定价（Pro/Flash 分层）计算每次调用的 USD/RMB 成本。
+ * **日志**: 关键节点（Prompt构建、Refine触发、校验结果）均有 INFO/WARN 级别日志，支持全链路追踪。
