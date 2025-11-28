@@ -8,3 +8,4 @@ from . import narration
 from . import character
 from . import editing
 from . import dubbing
+from . import localization

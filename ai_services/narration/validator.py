@@ -10,7 +10,7 @@ class NarrationValidator:
     [Stage 4] 解说词校验器 (Strategy Upgrade)。
     """
 
-    def __init__(self, blueprint_data: Dict, config: Dict[str, Any], logger: logging.Logger):
+    def __init__(self, blueprint_data: Dict, config: Dict[str, Any], logger: logging.Logger, lang: str = "zh"):
         self.blueprint_data = blueprint_data
         self.scenes_map = self.blueprint_data.get("scenes", {})
         self.logger = logger
@@ -20,6 +20,7 @@ class NarrationValidator:
 
         # [修改] 获取比例系数，默认为 0.0 (严格模式)
         self.overflow_tolerance = config.get("overflow_tolerance", 0.0)
+        self.lang = lang  # 这里的 lang 应该是 target_lang
 
     # ... (_parse_time_str, calculate_visual_duration, predict_audio_duration 保持不变) ...
     def _parse_time_str(self, time_str: str) -> float:
@@ -44,8 +45,12 @@ class NarrationValidator:
         return round(total_duration, 2)
 
     def predict_audio_duration(self, text: str) -> float:
-        if not text: return 0.0
-        return round(len(text) / self.speaking_rate, 2)
+        if self.lang == "zh":
+            # 中文按字符算
+            return round(len(text) / self.speaking_rate, 2)
+        else:
+            # 英文按单词算 : TODO： 可能要维护一个不同语言的词表
+            return round(len(text.split()) / self.speaking_rate, 2)
 
     def validate_snippet(self, snippet: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """

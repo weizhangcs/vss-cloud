@@ -62,7 +62,8 @@ class TaskCreateView(APIView):
             Task.TaskType.DEPLOY_RAG_CORPUS: "rag_deployment_report",
             Task.TaskType.GENERATE_NARRATION: "narration_script",
             Task.TaskType.GENERATE_EDITING_SCRIPT: "editing_script",
-            Task.TaskType.GENERATE_DUBBING: "dubbing_script"
+            Task.TaskType.GENERATE_DUBBING: "dubbing_script",
+            Task.TaskType.LOCALIZE_NARRATION: "localized_script"
         }
 
         output_prefix = output_prefixes.get(task_type)

@@ -36,6 +36,7 @@ class TaskCreateSerializer(serializers.ModelSerializer):
             Task.TaskType.DEPLOY_RAG_CORPUS,
             Task.TaskType.GENERATE_NARRATION,
             Task.TaskType.GENERATE_EDITING_SCRIPT,
+            Task.TaskType.LOCALIZE_NARRATION,
             Task.TaskType.GENERATE_DUBBING
         ]  # 这是一个白名单
         if value not in cloud_native_tasks:

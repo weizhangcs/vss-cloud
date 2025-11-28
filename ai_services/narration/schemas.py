@@ -65,6 +65,7 @@ class NarrationServiceConfig(BaseModel):
     """完整的服务配置契约"""
     asset_name: Optional[str] = None
     lang: Literal["zh", "en"] = "zh"
+    target_lang: Optional[Literal["zh", "en","fr"]] = None
     model: str = "gemini-2.5-flash"
     rag_top_k: int = Field(default=50, ge=1, le=200)
     speaking_rate: float = 4.2
@@ -80,7 +81,22 @@ class NarrationServiceConfig(BaseModel):
 
 # ... (NarrationSnippet 和 NarrationResult 保持不变)
 class NarrationSnippet(BaseModel):
+    """单段解说词结构"""
+    # 1. 最终交付文本 (如果是翻译模式，这里存译文；否则存原文)
     narration: str
+
+    # 2. [新增] 源语言文本 (用于对照/字幕)
+    # 在翻译模式下，这里存中文原文；非翻译模式下，这里可能为空或与 narration 相同
+    narration_source: Optional[str] = None
+
+    # 3. [新增] 配音专用文本
+    # 包含 [sigh], [pause] 等标记，专门喂给 TTS
+    narration_for_audio: Optional[str] = None
+
+    # 4. [新增] TTS 导演指令
+    # 例如 "Speak in a sarcastic tone"
+    tts_instruct: Optional[str] = None
+
     source_scene_ids: List[int]
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -92,11 +108,23 @@ class NarrationSnippet(BaseModel):
 
 
 class NarrationResult(BaseModel):
+    """最终向外交付的完整结果"""
     generation_date: str
     asset_name: str
     source_corpus: str
+
+    # [新增] 持久化 RAG 上下文
+    # 未来做“纯翻译任务”时，直接读取这个字段，无需再次检索 RAG
+    rag_context_snapshot: Optional[str] = None
+
     narration_script: List[NarrationSnippet]
     ai_total_usage: Dict[str, Any]
+
+    @validator('narration_script')
+    def script_must_not_be_empty(cls, v):
+        if not v:
+            raise ValueError("Generated narration script is empty!")
+        return v
 
     @validator('narration_script')
     def script_must_not_be_empty(cls, v):

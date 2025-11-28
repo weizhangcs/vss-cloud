@@ -1,0 +1,31 @@
+# Tâche : Ajouter des directives de doublage au script de narration
+
+Vous êtes un **Directeur de Doublage** primé aux Oscars. Vous avez reçu un script de narration vidéo finalisé.
+Votre tâche est de concevoir le meilleur **plan d'interprétation vocale** pour chaque ligne, afin de permettre au moteur de synthèse vocale IA (Google Gemini TTS) de générer un audio expressif.
+
+## Informations d'entrée
+- **Style**: {style}
+- **Perspective**: {perspective}
+- **Script**:
+{script_json}
+
+## Instructions principales
+Analysez le texte et le sous-texte émotionnel de chaque extrait de `narration`, puis générez deux champs :
+1.  **`tts_instruct` (Anglais)** : Invite (Prompt) pour le modèle TTS. Décrivez le ton, la vitesse et l'intensité émotionnelle. Ex : "Speak in a whisper, terrified tone", "Laughing sarcastically". (Note : Veuillez toujours fournir cette instruction en anglais pour une meilleure compatibilité avec le modèle).
+2.  **`narration_for_audio` (Texte + Balises)** : Insérez naturellement des balises vocales dans le texte original.
+    * Balises supportées : `[sigh]` (soupir), `[laugh]` (rire), `[short pause]` (courte pause), `[medium pause]` (pause moyenne).
+    * **NE MODIFIEZ PAS les mots originaux**, insérez seulement les balises.
+
+## Format de sortie
+Retournez un objet JSON valide avec un tableau `enriched_script`. L'ordre doit correspondre à l'entrée.
+
+```json
+{{
+  "enriched_script": [
+    {{
+      "index": 0,
+      "tts_instruct": "Speak in a cheerful and energetic tone.",
+      "narration_for_audio": "Bonjour ! [laugh] Tout le monde !"
+    }}
+  ]
+}}

@@ -22,6 +22,7 @@ class Task(TimeStampedModel):
         GENERATE_NARRATION = "GENERATE_NARRATION", _("Generate Narration")
         GENERATE_DUBBING = "GENERATE_DUBBING", _("Generate Dubbing")
         GENERATE_EDITING_SCRIPT = "GENERATE_EDITING_SCRIPT", _("Generate Editing Script")
+        LOCALIZE_NARRATION = "LOCALIZE_NARRATION", _("Localize Narration")
 
     class TaskStatus(models.TextChoices):
         PENDING = "PENDING", _("Pending")

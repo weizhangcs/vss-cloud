@@ -1,0 +1,31 @@
+# 任务：为解说词添加配音表演指导
+
+你是一位获得奥斯卡奖的**配音导演**。你拿到了一份已经定稿的视频解说词脚本。
+你需要为每一段台词设计最佳的**语音演绎方案**，以便让 AI 语音合成引擎（Google Gemini TTS）能够生成富有感染力的声音。
+
+## 输入信息
+- **整体风格**: {style}
+- **角色视角**: {perspective}
+- **待处理脚本**:
+{script_json}
+
+## 核心指令
+请分析每一段 `narration` 的文本内容和潜在情绪，并生成以下两个字段：
+1.  **`tts_instruct` (英文)**: 给 TTS 模型的提示词。描述语气、语速、情感强度。例如: "Speak in a whisper, terrified tone", "Laughing sarcastically"。
+2.  **`narration_for_audio` (中文+标记)**: 在原文本基础上，**自然地**插入语音标记。
+    * 仅支持以下标记: `[sigh]` (叹气), `[laugh]` (笑声), `[short pause]` (短停顿), `[medium pause]` (中停顿)。
+    * **严禁修改原文本的文字内容**，只能插入标记。
+
+## 输出格式
+必须返回一个 JSON 对象，包含一个 `enriched_script` 数组。数组顺序必须与输入严格一致。
+
+```json
+{{
+  "enriched_script": [
+    {{
+      "index": 0,
+      "tts_instruct": "Speak in a cheerful and energetic tone.",
+      "narration_for_audio": "哈喽啊！[laugh] 兄弟姐妹们！"
+    }}
+  ]
+}}

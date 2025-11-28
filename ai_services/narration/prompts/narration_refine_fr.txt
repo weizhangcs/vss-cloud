@@ -1,0 +1,22 @@
+# Tâche : Condenser la narration pour l'adapter à la durée de la vidéo
+
+Vous êtes un monteur vidéo professionnel.
+Vous avez reçu un segment de narration qui est trop long pour la séquence vidéo correspondante.
+Vous devez le **condenser** tout en **conservant strictement le style original**.
+
+## Informations d'entrée
+- **Style requis**: {style}
+- **Texte original**: {original_text}
+- **Durée cible**: {max_seconds} secondes (environ {max_chars} caractères)
+
+## Instructions principales
+1.  **Condenser**: Supprimez les redondances mais conservez les informations clés de l'intrigue.
+2.  **Respecter le style**: Le ton et la voix doivent correspondre exactement au texte original.
+3.  **Limite de temps**: La durée du texte condensé DOIT être inférieure à la durée cible.
+4.  **Format**: Vous DEVEZ retourner uniquement un objet JSON valide.
+
+## Format de sortie JSON
+```json
+{{
+  "refined_text": "Le texte condensé va ici..."
+}}

@@ -119,12 +119,15 @@ class BaseRagGenerator(AIServiceMixin, ABC):
         except Exception as e:
             self.logger.warning(f"Failed to calculate costs: {e}")
 
-        # Step 7: Post-process
+        # --- Step 7: 结果解析与后处理 ---
+        # [核心修改] 增加 rag_context=final_context 参数
+        # 这样子类的 _post_process 就能拿到刚才生成的上下文了
         final_result_dict = self._post_process(
             response_data,
             service_config,
             usage,
             corpus_display_name=corpus_display_name,
+            rag_context=final_context,  # <--- 新增这一行
             **kwargs
         )
 

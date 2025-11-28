@@ -16,7 +16,8 @@ def trigger_task_execution(sender, instance, created, **kwargs):
             Task.TaskType.DEPLOY_RAG_CORPUS,
             Task.TaskType.CHARACTER_IDENTIFIER,
             Task.TaskType.GENERATE_EDITING_SCRIPT,
-            Task.TaskType.GENERATE_DUBBING
+            Task.TaskType.GENERATE_DUBBING,
+            Task.TaskType.LOCALIZE_NARRATION
         ]
 
         if instance.task_type in cloud_native_tasks:
