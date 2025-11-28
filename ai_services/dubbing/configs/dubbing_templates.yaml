@@ -31,7 +31,7 @@ chinese_paieas_replication:
     model: CosyVoice2-0.5B
     mode: natural_language_replication
     speed: 1.0
-
+ 
 # 模板3: 中文SSML配音 (待实现)
 # chinese_ssml_emotional:
 #   provider: aliyun_cosyvoice
@@ -40,3 +40,18 @@ chinese_paieas_replication:
 #   pre_processing_model: gemini-1.5-pro
 #   params:
 #     voice: longnan_v2
+
+# [新增] 模板5: 中文情感配音 (Google Gemini TTS)
+# 优势: 支持由 Narration Generator 生成的复杂 Prompt 指令 (如: 叹气、停顿、语调变化)
+chinese_gemini_emotional:
+  provider: google_tts  # 对应 handler 中注册的策略 key
+  language: zh
+  method: text
+  audio_format: mp3
+  params:
+    # 关键配置: 使用 Gemini 模型和通用人设 (您验证过的 Despina)
+    model_name: "gemini-2.5-pro-tts"
+    voice_name: "Despina"
+    speaking_rate: 1.1
+    # 默认指令 (会被上游 Narration Generator 生成的 tts_instruct 覆盖)
+    instruct: "Speak in a natural, expressive tone."

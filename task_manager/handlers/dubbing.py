@@ -7,6 +7,7 @@ from task_manager.models import Task
 # 注意：引用去除了 V2 后缀的引擎
 from ai_services.dubbing.dubbing_engine import DubbingEngine
 from ai_services.dubbing.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy
+from ai_services.dubbing.strategies.google_tts_strategy import GoogleTTSStrategy
 from ai_services.dubbing.strategies.base_strategy import TTSStrategy
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
@@ -44,8 +45,11 @@ class DubbingHandler(BaseTaskHandler):
             service_url=settings.PAI_EAS_SERVICE_URL,
             token=settings.PAI_EAS_TOKEN
         )
+        strategy_google = GoogleTTSStrategy()
+
         available_strategies: Dict[str, TTSStrategy] = {
             "aliyun_paieas": strategy_paieas,
+            "google_tts": strategy_google,
         }
 
         # 4. 初始化引擎
