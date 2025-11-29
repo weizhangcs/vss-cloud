@@ -36,6 +36,17 @@ rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
 mkdir -p "$TEMP_DIR/conf"
 
+# 在打包阶段直接创建生产环境的数据挂载目录
+# 这样解压后，目录结构就是完整的，无需 init.sh 再去 mkdir
+echo "   📂 创建生产数据目录结构..."
+mkdir -p "$TEMP_DIR/prod_data/postgres"
+mkdir -p "$TEMP_DIR/prod_data/redis"
+
+# 为了防止 tar 在某些特殊参数下忽略空文件夹，
+# 或者是为了 Git 仓库也能保留这个结构，我们可以放一个空的占位文件
+touch "$TEMP_DIR/prod_data/postgres/.keep"
+touch "$TEMP_DIR/prod_data/redis/.keep"
+
 # --- 4. 复制文件 ---
 echo "📋 正在复制文件..."
 MISSING_CRITICAL=0

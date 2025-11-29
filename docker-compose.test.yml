@@ -3,6 +3,16 @@
 # version: '1.2.0'
 
 services:
+  db:
+    # 只需要补充端口映射
+    ports:
+      - "5432:5432"
+
+  redis:
+    # 只需要补充端口映射
+    ports:
+      - "6379:6379"
+
   web:
     image: ghcr.io/weizhangcs/vss-cloud:dev
     command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
@@ -19,7 +29,7 @@ services:
 
   # Nginx 仅在 Test/Prod 环境启用
   nginx:
-    image: nginx:latest
+    image: nginx:1.25-alpine
     ports:
       - "8080:80" # 测试环境使用 8080，避免与宿主机 80 冲突
     volumes:

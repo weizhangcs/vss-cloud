@@ -1,5 +1,7 @@
 # Dockerfile
-FROM python:3.11-slim
+#FROM python:3.12-slim 官方Python精简镜像
+#国内阿里云的镜像仓库（避免配置docker desktop的registry）
+FROM crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -22,5 +24,3 @@ RUN mkdir -p /etc/apt/keyrings && \
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
 
 COPY . /app/
-
-#COPY conf/nginx.template.conf /etc/nginx/conf.d/default.conf.template
