@@ -3,6 +3,23 @@
 # version: '1.2.0'
 
 services:
+  db:
+    # 生产环境使用官方镜像（或你信任的稳定源）
+    image: postgres:16-alpine
+    restart: always
+    volumes:
+      # [核心修改] 使用宿主机路径，替代 base 中的命名卷
+      - ./prod_data/postgres:/var/lib/postgresql/data
+    # 生产环境通常不暴露 5432 端口到公网，除非有堡垒机需求
+    # ports:
+    #   - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    # Redis 也可以做持久化挂载，看你业务是否需要 Redis 数据持久保存
+    volumes:
+      - ./prod_data/redis:/data
   web:
     image: ghcr.io/weizhangcs/vss-cloud:latest
     command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
@@ -18,7 +35,7 @@ services:
       - ./shared_media:/app/shared_media
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.25-alpine
     ports:
       - "80:80" # 生产环境使用 80
     volumes:

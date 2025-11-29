@@ -7,6 +7,7 @@
 set -e
 
 # --- 0. 环境预设配置 (Configuration Map) ---
+PROJECT_NAME="vss-cloud"
 DEFAULT_BUCKET_DEV="vss-cloud-dev-bucket"
 DEFAULT_BUCKET_TEST="vss-cloud-test-bucket"
 DEFAULT_BUCKET_DEMO="vss-cloud-demo-bucket"
@@ -56,10 +57,10 @@ fi
 
 # 构建最终的 Compose 命令参数
 # 注意顺序: Base 在前, Override 在后
-COMPOSE_FLAGS="-f $BASE_COMPOSE_FILE -f $OVERRIDE_COMPOSE_FILE"
+COMPOSE_FLAGS="-p $PROJECT_NAME -f $BASE_COMPOSE_FILE -f $OVERRIDE_COMPOSE_FILE"
 
 echo "   - Base Config: $BASE_COMPOSE_FILE"
-echo "   - Override Config: $OVERRIDE_COMPOSE_FILE"
+echo "   - Config Files: $BASE_COMPOSE_FILE + $OVERRIDE_COMPOSE_FILE"
 echo "   - 默认 DEBUG: $DEBUG_DEFAULT"
 echo "   - 预设 Bucket: $TARGET_BUCKET"
 
@@ -94,8 +95,6 @@ check_file_exists() {
 # --- 3. 环境预检 ---
 echo "🔍 [Step 1] 环境预检..."
 check_file_exists "$ENV_TEMPLATE_FILE"
-
-# [核心修复] 分别检查两个 Compose 文件
 check_file_exists "$BASE_COMPOSE_FILE"
 check_file_exists "$OVERRIDE_COMPOSE_FILE"
 
@@ -188,24 +187,26 @@ if [ "$GENERATE_NEW_ENV" = true ]; then
     if [[ -n "$user_input" ]]; then INPUT_PAI_TOKEN="$user_input"; fi
 
     # --- 4.3 写入配置 ---
-    DB_USER="visify_cloud_user"
-    DB_NAME="visify_story_studio_db"
+    DB_USER="vss_cloud_user"
+    DB_NAME="vss_cloud_db"
     NEW_DATABASE_URL="postgres://${DB_USER}:${NEW_DB_PASSWORD}@db:5432/${DB_NAME}"
 
     sed -i.bak "s|SECRET_KEY=.*|SECRET_KEY='${NEW_SECRET_KEY}'|" "$ENV_FILE"
+    sed -i.bak "s|POSTGRES_USER=.*|POSTGRES_USER='${DB_USER}'|" "$ENV_FILE"
+    sed -i.bak "s|POSTGRES_DB=.*|POSTGRES_DB='${DB_NAME}'|" "$ENV_FILE"
     sed -i.bak "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD='${NEW_DB_PASSWORD}'|" "$ENV_FILE"
     sed -i.bak "s|DATABASE_URL=.*|DATABASE_URL='${NEW_DATABASE_URL}'|" "$ENV_FILE"
     sed -i.bak "s|DEBUG=.*|DEBUG=${DEBUG_DEFAULT}|" "$ENV_FILE"
     sed -i.bak "s|SERVER_DOMAIN=.*|SERVER_DOMAIN=${INPUT_DOMAIN}|" "$ENV_FILE"
 
-    # 1. 处理 ALLOWED_HOSTS (保持不变)
+    # 4.3.1. 处理 ALLOWED_HOSTS (保持不变)
     if [[ "$INPUT_DOMAIN" == "localhost" ]]; then
         sed -i.bak "s|ALLOWED_HOSTS=.*|ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0|" "$ENV_FILE"
     else
         sed -i.bak "s|ALLOWED_HOSTS=.*|ALLOWED_HOSTS=${INPUT_DOMAIN},localhost,127.0.0.1,0.0.0.0|" "$ENV_FILE"
     fi
 
-    # 2. [新增] 智能计算 CSRF_TRUSTED_ORIGINS
+    # 4.3.2. [新增] 智能计算 CSRF_TRUSTED_ORIGINS
     # 根据当前运行模式，自动判定端口后缀
     CSRF_PORT_SUFFIX=""
     if [[ "$MODE" == "test" ]]; then
@@ -257,7 +258,7 @@ else
     fi
 fi
 
-# --- 2.5 Docker 仓库登录检查 (增强提示版) ---
+# --- 4.4 Docker 仓库登录检查 (增强提示版) ---
 check_docker_login() {
     # 只有在生产/演示/测试模式下（需要拉取远程镜像）才检查
     if [[ "$MODE" == "dev" ]]; then
@@ -300,6 +301,15 @@ check_docker_login() {
 }
 
 check_docker_login
+
+# --- 4.5 生产环境数据目录检查 (兜底策略) ---
+# 虽然 package_deploy.sh 已经创建了目录，但保留此段作为安全兜底。
+if [[ "$MODE" == "prod" ]]; then
+    # echo "📂 [Step 4.5] 验证数据目录结构..."
+    # -p 参数保证了如果目录已存在，不会报错；如果不存在（如git pull部署），则自动创建
+    mkdir -p "./prod_data/postgres"
+    mkdir -p "./prod_data/redis"
+fi
 
 # --- 5. 启动基础服务 ---
 echo "🚀 [Step 3] 启动基础服务 (Database & Redis)..."

@@ -5,7 +5,7 @@
 services:
   # --- 基础服务 (所有环境通用) ---
   db:
-    image: postgres:15
+    image: postgres:16-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
@@ -13,15 +13,11 @@ services:
       # 数据库凭证从 .env 读取，不在 YAML 中硬编码
     env_file:
       - .env
-    ports:
-      - "5432" # 仅暴露给 Docker 网络，Dev 环境可在 Override 中映射到宿主机
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
     environment:
       - TZ=Asia/Shanghai
-    ports:
-      - "6379"
 
   # --- 应用服务骨架 (具体实现由 Override 决定) ---
   web:

@@ -4,8 +4,18 @@
 
 services:
   db:
+    # [新增] 强制指向阿里云私有仓库
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/postgres:16-alpine
     ports:
-      - "8543:5432" # 开发环境映射数据库端口到宿主机，方便调试
+      - "8543:5432"
+
+  # --- 覆盖 Redis 镜像源 ---
+  redis:
+    # [新增] 强制指向阿里云私有仓库
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/redis:7-alpine
+    restart: always
+    ports:
+      - "8637:6379"  # [新增] 左边是宿主机端口，右边是容器端口
 
   web:
     build: .
