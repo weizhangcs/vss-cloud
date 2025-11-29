@@ -6,6 +6,23 @@
 # 遇到错误立即退出
 set -e
 
+# --- 自动修正运行路径 ---
+# 获取当前脚本所在的绝对路径
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# 假设脚本在 scripts/ 目录下，项目根目录就是上一级
+# 如果你打包时把脚本放回了根目录，这里需要判断一下
+if [ -f "$SCRIPT_DIR/../docker-compose.base.yml" ]; then
+    # 脚本在子目录，切换到父级 (项目根目录)
+    cd "$SCRIPT_DIR/.."
+    echo "📂 [Context] 切换工作目录至项目根目录: $(pwd)"
+elif [ -f "$SCRIPT_DIR/docker-compose.base.yml" ]; then
+    # 脚本已经在根目录 (生产环境解压后可能的情况)
+    cd "$SCRIPT_DIR"
+else
+    echo "❌ 错误: 无法定位项目根目录 (未找到 docker-compose.base.yml)"
+    exit 1
+fi
+
 # --- 0. 环境预设配置 (Configuration Map) ---
 PROJECT_NAME="vss-cloud"
 DEFAULT_BUCKET_DEV="vss-cloud-dev-bucket"

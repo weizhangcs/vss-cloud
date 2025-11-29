@@ -6,6 +6,11 @@
 
 set -e
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$SCRIPT_DIR/.." # 强制指定项目根目录
+cd "$PROJECT_ROOT" # 确保后续操作都在根目录下进行
+echo "📂 工作目录已设定为: $(pwd)"
+
 # --- 1. 配置 ---
 APP_NAME="vss-cloud"
 GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
@@ -19,8 +24,8 @@ TEMP_DIR="${OUTPUT_DIR}/${PACKAGE_NAME}"
 
 # --- 2. 定义交付物清单 (Manifest) ---
 FILES_TO_COPY=(
-    "init.sh"
-    "install_deps.sh"
+    "scripts/init.sh"
+    "scripts/install_deps.sh"
     ".env.template"
     "docker-compose.base.yml"
     "docker-compose.test.yml"
@@ -53,11 +58,17 @@ MISSING_CRITICAL=0
 
 for file in "${FILES_TO_COPY[@]}"; do
     if [ -f "$file" ]; then
-        # 使用 cp --parents 保持目录结构
-        cp --parents "$file" "$TEMP_DIR/"
-        echo "   ✅ Included: $file"
+        # 判断：如果是 scripts/ 下的文件，去掉目录结构直接放根目录
+        if [[ "$file" == scripts/* ]]; then
+            cp "$file" "$TEMP_DIR/"
+            echo "   ✅ Included (Flattened): $file -> root"
+        else
+            # 其他文件 (如 conf/nginx...) 保持目录结构
+            cp --parents "$file" "$TEMP_DIR/"
+            echo "   ✅ Included: $file"
+        fi
     else
-        echo "   ⚠️  Warning: 关键文件 '$file' 未找到！"
+        echo "   ⚠️  Warning: 文件 '$file' 未找到！"
         if [[ "$file" == "init.sh" || "$file" == ".env.template" ]]; then
              MISSING_CRITICAL=1
         fi
