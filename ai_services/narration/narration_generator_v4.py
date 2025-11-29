@@ -216,9 +216,10 @@ class NarrationGeneratorV3(BaseRagGenerator):
         initial_script = llm_response.get("narration_script", [])
         blueprint_path = kwargs.get('blueprint_path')
         asset_name = config.asset_name or "Unknown Asset"
-
-        # [新增] 获取基类传来的上下文
         rag_context = kwargs.get('rag_context', '')
+        # [核心修复] 在这里初始化默认值！
+        # 默认为源语言 (zh)，如果后续触发了翻译，再更新为目标语言
+        processing_lang = config.lang
 
         # ==========================================
         # 1. [新增] 翻译环节 (Translate Layer)
@@ -280,30 +281,30 @@ class NarrationGeneratorV3(BaseRagGenerator):
             self.logger.error(f"Output Validation Failed: {e}")
             raise RuntimeError(f"Generated result failed schema validation: {e}")
 
-    def _translate_script(self, script: List[Dict], src_lang: str, tgt_lang: str, context: str, model: str) -> List[Dict]:
+    def _translate_script(self, script: List[Dict], src_lang: str, tgt_lang: str, context: str, model: str) -> List[
+        Dict]:
         """
         [Stage 3.5] 上下文感知翻译器。
         """
         if not script: return []
 
-        # 简化输入，节省 Token
         simplified_input = [
             {"index": i, "narration": item["narration"]}
             for i, item in enumerate(script)
         ]
 
-        # [关键] 这里的 lang 参数决定了加载 translator_zh.txt 还是 translator_en.txt
-        # 如果您的系统主要服务中文用户，或者 config.lang 是 'zh'，则加载 'zh'
-        # 建议直接使用 self.config.lang (即服务的主语言)
-        # 比如：服务设为 zh，那么即使是从 en 翻译到 es，我们也用中文给 LLM 下指令
-        instruction_lang = self.config.lang if hasattr(self, 'config') else 'zh'
+        # [修复 1] 优先使用目标语言的 Prompt 模版
+        # 如果目标是英文，用英文指令；如果目标是中文，用中文指令
+        # 这样能更好地激发模型的对应语言能力
+        prompt_lang = tgt_lang if tgt_lang in ["zh", "en", "fr"] else "en"
+        self.logger.info(f"Loading translation prompt for target language: {prompt_lang}")
 
-        translator_template = self._load_prompt_template(instruction_lang, "narration_translator")
+        translator_template = self._load_prompt_template(prompt_lang, "narration_translator")
 
         prompt = translator_template.format(
             src_lang=src_lang,
             tgt_lang=tgt_lang,
-            rag_context=context,  # [核心] 注入 RAG 上下文，解决代词歧义
+            rag_context=context,
             script_json=json.dumps(simplified_input, ensure_ascii=False, indent=2)
         )
 
@@ -312,34 +313,46 @@ class NarrationGeneratorV3(BaseRagGenerator):
             response_data, _ = self.gemini_processor.generate_content(
                 model_name=model,
                 prompt=prompt,
-                temperature=0.3  # 翻译追求准确
+                temperature=0.3
             )
 
             translated_data = response_data.get("translated_script", [])
 
-            # 回填翻译结果 (使用 map 加速)
-            trans_map = {item["index"]: item["narration"] for item in translated_data}
+            # [修复 2] 增强索引匹配的鲁棒性
+            trans_map = {}
+            for item in translated_data:
+                try:
+                    # 强制转为 int，防止 LLM 返回字符串类型的 "0"
+                    idx = int(item.get("index", -1))
+                    if idx >= 0:
+                        trans_map[idx] = item["narration"]
+                except (ValueError, TypeError):
+                    continue
 
+            self.logger.info(f"LLM returned {len(translated_data)} items. Matched {len(trans_map)} indices.")
+
+            match_count = 0
             for i, item in enumerate(script):
                 if i in trans_map:
-                    # [核心修改] 备份源文本 (Source)
-                    # 如果 script 是从上游传来的，可能已经有 narration 了
+                    # 备份源文本
                     item["narration_source"] = item["narration"]
-
-                    # 更新为主文本 (Target)
+                    # 更新为主文本
                     item["narration"] = trans_map[i]
 
-                    # 清空旧的 metadata (因为时长、缩写状态都变了，需要重新 Refine)
+                    # 清理旧的 metadata
                     if "metadata" in item:
-                        # 保留部分基础信息，清除时长相关
                         item["metadata"].pop("refined", None)
                         item["metadata"].pop("overflow_sec", None)
 
-            self.logger.info(f"Successfully translated {len(translated_data)} clips.")
+                    match_count += 1
+
+            if match_count == 0:
+                self.logger.warning("Translation Warning: No scripts were updated. Check index matching.")
+            else:
+                self.logger.info(f"Successfully applied translation to {match_count} clips.")
 
         except Exception as e:
             self.logger.error(f"Translation failed: {e}. Falling back to source language.")
-            # 降级策略：保持原文，不抛错
 
         return script
 
