@@ -1,0 +1,15 @@
+# .gitattributes
+# 强制统一换行符标准，防止 Windows/Linux 跨平台开发导致脚本无法运行
+
+# 【关键】所有 Shell 脚本必须强制使用 LF (解决 "No such file or directory" 问题)
+*.sh text eol=lf
+
+# 【推荐】配置文件和容器文件强制 LF
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+
+# 【推荐】Python 代码强制 LF
+*.py text eol=lf
+
+# 其他文本文件默认自动处理
+* text=auto
