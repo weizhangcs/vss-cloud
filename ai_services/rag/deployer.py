@@ -11,6 +11,8 @@ from typing import Union
 import vertexai
 from vertexai import rag
 from google.cloud import storage
+from google.api_core import exceptions as google_exceptions
+from core.exceptions import RateLimitException # [新增]
 
 # 从同级目录的 schemas.py 导入Pydantic模型
 from .schemas import NarrativeBlueprint, IdentifiedFact
@@ -114,9 +116,14 @@ class RagDeployer:
                 "total_scene_count": total_scenes
             }
 
+
         except Exception as e:
+            # [修正] 转译 Google 限流异常
+            if isinstance(e, (google_exceptions.TooManyRequests, google_exceptions.ResourceExhausted)):
+                raise RateLimitException(msg=str(e), provider="GoogleVertexAI") from e
             self.logger.critical(f"部署流程发生严重错误: {e}", exc_info=True)
-            raise  # 重新抛出异常，让Celery知道任务失败
+
+            raise
 
     def _fuse_and_prepare_files(self, source_blueprint_path: Path, enhanced_facts_path: Path, staging_dir: Path,
                                 gcs_bucket_name: str, org_id: str, asset_id: str) -> tuple[str, int]:

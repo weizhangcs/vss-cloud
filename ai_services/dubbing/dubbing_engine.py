@@ -7,6 +7,9 @@ from typing import Dict, Any, List
 
 from .strategies.base_strategy import TTSStrategy, ReplicationStrategy
 
+from core.exceptions import BizException, RateLimitException
+from core.error_codes import ErrorCode
+
 
 class DubbingEngine:
     SERVICE_NAME = "dubbing_engine"
@@ -65,6 +68,9 @@ class DubbingEngine:
         with narration_path.open('r', encoding='utf-8') as f:
             narration_data = json.load(f).get("narration_script", [])
 
+        if not narration_data:
+            raise BizException(ErrorCode.INVALID_PARAM, msg="Input narration script is empty or invalid format")
+
         results = []
         total = len(narration_data)
         self.logger.info(f"Starting dubbing loop for {total} clips...")
@@ -93,7 +99,7 @@ class DubbingEngine:
                 current_params = base_params.copy()
 
             if not text:
-                self.logger.warning(f"Skipping clip {idx}: No text found.")
+                self.logger.warning(f"Clip {idx} has empty text. Skipping.")
                 continue
 
             # 文件路径 (扩展名由 Template 配置决定，Google配mp3，Aliyun配wav，无需代码干预)
@@ -104,6 +110,11 @@ class DubbingEngine:
                 # 调用策略
                 duration = strategy.synthesize(text, final_path, current_params)
 
+                # [新增] 2. I/O 防线 (Output Guard)
+                if not final_path.exists() or final_path.stat().st_size < 100:  # 小于 100 字节肯定是坏文件
+                    raise BizException(ErrorCode.TTS_GENERATION_ERROR,
+                                       msg=f"Generated file is invalid (Size: {final_path.stat().st_size if final_path.exists() else 0} bytes)")
+
                 rel_path = final_path.relative_to(self.shared_root_path)
                 results.append({
                     **entry,
@@ -112,10 +123,16 @@ class DubbingEngine:
                 })
                 self.logger.info(f"   ✅ Generated: {duration}s")
 
-            except Exception as e:
-                self.logger.error(f"   ❌ Failed: {e}")
-                results.append({**entry, "error": str(e)})
 
+
+            except RateLimitException as e:
+                # 之前讨论过的限流捕获
+                raise e
+            except Exception as e:
+                # [Fix Issue #11] 原子性失败
+                # 不再 append error 到 results，而是直接抛出，让 Task 变为 FAILED (或 RETRY)
+                self.logger.error(f"Clip {idx} failed. Aborting entire task. Error: {e}")
+                raise e
         return {"dubbing_script": results}
 
     # ... (_handle_replication_setup 保持不变) ...

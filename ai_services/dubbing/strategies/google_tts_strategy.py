@@ -6,6 +6,12 @@ from typing import Dict, Any
 from google.cloud import texttospeech
 from .base_strategy import TTSStrategy
 
+from google.api_core import exceptions as google_exceptions
+from google.api_core.client_options import ClientOptions
+# 复用我们定义的 RateLimitException，或者新建一个 RetryableException
+# 这里为了方便，我们暂且认为超时也是一种需要"退避重试"的情况
+from core.exceptions import RateLimitException
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +41,7 @@ class GoogleTTSStrategy(TTSStrategy):
         instruct = params.get("instruct")
         voice_name = params.get("voice_name", "Puck")  # 默认 Gemini 人设 Puck
         language_code = params.get("language_code", "cmn-CN")  # 默认中文
+
         model_name = params.get("model_name", "gemini-2.5-pro-tts")  # 默认 Gemini 模型
         speaking_rate = params.get("speaking_rate", 1.0)
 
@@ -77,7 +84,8 @@ class GoogleTTSStrategy(TTSStrategy):
                     "input": synthesis_input,
                     "voice": voice_params,
                     "audio_config": audio_config
-                }
+                },
+                timeout=300
             )
 
             # 6. 保存文件
@@ -88,9 +96,16 @@ class GoogleTTSStrategy(TTSStrategy):
             duration = self._get_audio_duration(output_path)
             return duration
 
+
+        except (google_exceptions.DeadlineExceeded,
+                google_exceptions.ServiceUnavailable,
+                google_exceptions.Cancelled) as e:
+
+            # [修改] 2. 将网络/超时错误映射为可重试异常
+            # 这样 Task 层捕获到后，会触发 Celery 的自动重试
+            raise RateLimitException(msg=f"Google TTS Network Error: {e}", provider="GoogleTTS") from e
         except Exception as e:
-            logger.error(f"[GoogleTTS] API call failed: {e}")
-            raise
+            raise e  # 其他错误直接冒泡
 
     def _get_audio_duration(self, file_path: Path) -> float:
         """使用 mutagen 读取 MP3 文件时长"""

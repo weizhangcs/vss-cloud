@@ -17,6 +17,7 @@ from google.api_core import exceptions
 from google.genai.errors import ServerError
 from google.genai import types
 
+from core.exceptions import RateLimitException
 
 class GeminiProcessor:
     """
@@ -294,20 +295,30 @@ class GeminiProcessor:
 
     def _log_and_raise(self, e: Exception, context: str) -> None:
         """
-        辅助函数：记录错误日志，并重新抛出异常，附带上下文信息。
-        用于处理 API 调用失败或重试耗尽后的最终异常。
+        辅助函数：记录错误日志，并重新抛出异常。
+        [修改] 增强：识别限流错误并抛出特定异常，供上层 Task 捕获。
         """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        error_msg = str(e)
+
         error_info = {
             "error_type": type(e).__name__,
-            "error_message": str(e),
+            "error_message": error_msg,
             "timestamp": timestamp,
             "context": context,
             "stack_trace": self._get_clean_stacktrace()
         }
         log_subdir = "errors_async" if "async" in context else "errors"
         self._log_to_file(log_subdir, "error_", error_info)
-        raise RuntimeError(f"{context}失败: {str(e)}") from e
+
+        # --- 抛出强类型异常 ---
+        # 识别 Google/Aliyun 常见的限流关键字
+        if any(k in error_msg for k in ["429", "ResourceExhausted", "Too Many Requests", "Throttling"]):
+            print(f"⚠️ Detected Rate Limit in {context}. Raising RateLimitException.")
+            raise RateLimitException(msg=error_msg, provider="Gemini/External") from e
+
+        # 对于其他错误，保持抛出 RuntimeError
+        raise RuntimeError(f"{context}失败: {error_msg}") from e
 
     def _log_to_file(self, subdir: str, prefix: str, content: Any) -> Optional[Path]:
         """将请求/响应数据或错误信息写入调试文件 (如果 debug_mode 开启)。"""

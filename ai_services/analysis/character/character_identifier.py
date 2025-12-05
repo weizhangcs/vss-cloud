@@ -8,12 +8,16 @@ from pathlib import Path
 from typing import Dict, Any, Union, List
 from datetime import datetime
 from collections import defaultdict
+from pydantic import ValidationError
 
 # 导入项目内部依赖
 from ai_services.common.gemini.ai_service_mixin import AIServiceMixin
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
 from ai_services.common.gemini.cost_calculator import CostCalculator
+from core.error_codes import ErrorCode
+from core.exceptions import BizException
 
+from .schemas import CharacterAnalysisResponse
 
 class CharacterIdentifier(AIServiceMixin):
     """
@@ -239,13 +243,35 @@ class CharacterIdentifier(AIServiceMixin):
             self._save_debug_artifact("prompt.txt", prompt, char_name, chunk_index)
 
         # 步骤 4: 调用AI模型
+        # 步骤 4: 调用AI模型
         # 从 kwargs 中获取 model 和 temp，不再硬编码
         response_data, usage = self.gemini_processor.generate_content(
             model_name=kwargs.get('default_model', 'gemini-2.5-flash'),
             prompt=prompt,
             temperature=kwargs.get('default_temp', 0.1)
         )
-        facts = response_data.get("identified_facts", [])
+
+        # [核心修改] 强校验：LLM 返回的数据是否符合契约？
+        try:
+            validated_response = CharacterAnalysisResponse(**response_data)
+            # 获取校验后的纯净数据 (Pydantic Model List)
+            validated_facts = validated_response.identified_facts
+        except ValidationError as e:
+            # [关键] 捕获 Schema 错误，标记为 LLM 推理失败
+            self.logger.error(f"LLM Schema Validation Failed: {e}")
+            self.logger.debug(f"Raw Response: {response_data}")
+
+            # 抛出业务异常，Task 层会捕获并标记为 Failed
+            # 可以在 data 中附带 raw response 方便调试
+            raise BizException(
+                ErrorCode.LLM_INFERENCE_ERROR,
+                msg=f"Gemini output structure invalid: {str(e)}",
+                data={"raw_snippet": str(response_data)[:200]}
+            )
+
+        # [修改] 后续逻辑使用 validated_facts
+        # 注意：validated_facts 是 Model 对象列表，需要转回 dict 给下游处理
+        facts = [f.dict() for f in validated_facts]
 
         # 步骤 5: 后处理 - 为AI返回的事实注入'type'元数据
         # AI只返回属性名称，我们根据schema为其补充属性类别（如'恒定', '状态性'等）

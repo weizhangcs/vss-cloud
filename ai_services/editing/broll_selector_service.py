@@ -12,6 +12,10 @@ from typing import Dict, Any, List
 from ai_services.common.gemini.ai_service_mixin import AIServiceMixin
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
 
+from core.exceptions import BizException, RateLimitException
+from core.error_codes import ErrorCode
+from pydantic import ValidationError
+from .schemas import BrollSelectionResponse
 
 class BrollSelectorService(AIServiceMixin):
     """
@@ -213,12 +217,25 @@ class BrollSelectorService(AIServiceMixin):
                 prompt=prompt,
                 temperature=kwargs.get('default_temp', 0.1)
             )
-            selected_ids_str = response_data.get("selected_ids", [])
+
+            # [新增] 契约校验
+            validated = BrollSelectionResponse(**response_data)
+            selected_ids_str = validated.selected_ids
+
+            # 后续逻辑保持不变，因为 selected_ids_str 已经被保证是 List[str]
             selected_indices = [int(sid.replace("ID-", "")) for sid in selected_ids_str]
             selected_clips = [candidate_pool[i] for i in selected_indices if 0 <= i < len(candidate_pool)]
+
+        except RateLimitException as e:
+            raise e  # 透传限流异常
+        except ValidationError as e:
+            self.logger.error(f"B-Roll Schema Failed: {e}")
+            # 抛出推理错误
+            raise BizException(ErrorCode.LLM_INFERENCE_ERROR, msg=f"Invalid B-Roll JSON: {e}")
         except Exception as e:
-            self.logger.warning(f"AI序列选择失败，将回退到简单算法: {e}")
-            return []
+            self.logger.warning(f"AI序列选择失败 (Unknown): {e}")
+            return []  # 对于其他未知错误，可以保留降级策略，或者也抛出异常
+
         if not selected_clips: return []
         actual_duration = sum(c['duration'] for c in selected_clips)
         duration_delta = actual_duration - target_duration

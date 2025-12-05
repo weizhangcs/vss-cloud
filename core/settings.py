@@ -348,3 +348,32 @@ SHARED_LOG_ROOT.mkdir(parents=True, exist_ok=True)
 # ==============================================================================
 PAI_EAS_SERVICE_URL = config('PAI_EAS_SERVICE_URL', default='')
 PAI_EAS_TOKEN = config('PAI_EAS_TOKEN', default='')
+
+# ==============================================================================
+# DJANGO REST FRAMEWORK CONFIGURATION
+# ==============================================================================
+REST_FRAMEWORK = {
+    # [核心目标] 注册我们自定义的全局异常拦截器
+    'EXCEPTION_HANDLER': 'core.handlers.vss_exception_handler',
+
+    # [推荐] 明确指定默认认证方式
+    # SessionAuthentication: 支持浏览器 Session (方便 Admin/API 调试)
+    # BasicAuthentication: 支持 HTTP Basic Auth (方便命令行调试)
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+
+    # [推荐] 默认权限策略：所有接口默认需要认证
+    # (具体的 View 可以通过 permission_classes = [AllowAny] 来豁免)
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+
+    # [可选] 默认分页设置 (避免返回大数据集把内存撑爆)
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+
+    # [可选] 日期时间格式
+    'DATETIME_FORMAT': '%Y-%m-%d %H:%M:%S',
+}
