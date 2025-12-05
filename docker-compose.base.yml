@@ -3,14 +3,13 @@
 # version: '1.2.0'
 
 services:
-  # --- 基础服务 (所有环境通用) ---
+  # --- 基础服务 (保持不变) ---
   db:
     image: postgres:16-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
       - TZ=Asia/Shanghai
-      # 数据库凭证从 .env 读取，不在 YAML 中硬编码
     env_file:
       - .env
 
@@ -19,10 +18,8 @@ services:
     environment:
       - TZ=Asia/Shanghai
 
-  # --- 应用服务骨架 (具体实现由 Override 决定) ---
+  # --- 应用服务骨架 ---
   web:
-    # image 或 build 在具体环境中定义
-    # command 在具体环境中定义
     depends_on:
       - db
       - redis
@@ -32,12 +29,46 @@ services:
       - TZ=Asia/Shanghai
       - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
     volumes:
-      # 凭证文件是所有环境都需要的
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
 
-  worker:
-    # image 或 build 在具体环境中定义
-    command: celery -A core.celery worker -l info
+  # --- [架构升级] Worker 拓扑拆分 ---
+  # 说明：移除了原有的单体 'worker'，拆分为以下三组
+  # 所有 Worker 都继承相同的 环境变量 和 GCP凭证挂载
+
+  # 1. Gemini 专用 (低并发/配额敏感)
+  worker_gemini:
+    # 基础命令：指定监听 queue_gemini
+    command: celery -A core.celery worker -Q queue_gemini -l info
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
+    volumes:
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
+
+  # 2. 音频处理 (计算密集/中并发)
+  worker_audio:
+    # 基础命令：指定监听 queue_audio
+    command: celery -A core.celery worker -Q queue_audio -l info
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
+    volumes:
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
+
+  # 3. 通用/IO (高并发/兜底)
+  worker_io:
+    # 基础命令：监听 queue_io 和 默认 celery 队列
+    command: celery -A core.celery worker -Q queue_io,celery -l info
     depends_on:
       - db
       - redis

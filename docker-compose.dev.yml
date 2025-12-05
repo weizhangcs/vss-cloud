@@ -26,8 +26,36 @@ services:
     ports:
       - "8001:8001"
 
-  worker:
+  # --- [修复] Worker 开发环境配置 ---
+  # 关键修改：显式添加 command，强制指定并发数，防止读取宿主机核数导致爆炸
+
+  worker_gemini:
     build: .
+    # [新增] 显式指定命令，强制并发为 1 或 2，并在开发模式下使用 -P solo (或 threads) 以避免 prefork 问题
+    # 推荐开发环境使用 pool=solo，支持热重载且调试更稳定
+    command: celery -A core worker -Q queue_gemini --pool=solo --without-gossip --without-mingle --without-heartbeat -l info
     volumes:
-      - .:/app # [Dev] 挂载源码
+      - .:/app
       - ./shared_media:/app/shared_media
+    environment:
+      - C_FORCE_ROOT=true  # [新增] 解决 "Running worker with superuser privileges" 警告
+
+  worker_audio:
+    build: .
+    # [新增]
+    command: celery -A core worker -Q queue_audio --pool=solo --without-gossip --without-mingle --without-heartbeat -l info
+    volumes:
+      - .:/app
+      - ./shared_media:/app/shared_media
+    environment:
+      - C_FORCE_ROOT=true
+
+  worker_io:
+    build: .
+    # [新增]
+    command: celery -A core worker -Q queue_io,celery --pool=solo --without-gossip --without-mingle --without-heartbeat -l info
+    volumes:
+      - .:/app
+      - ./shared_media:/app/shared_media
+    environment:
+      - C_FORCE_ROOT=true

@@ -252,6 +252,19 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC' # 建议设置一个时区
 
+# [新增] 针对 solo 模式和长任务的优化
+# 如果任务执行时间长且阻塞主线程，心跳会丢失。
+# 在开发环境中，我们可以禁用心跳检查，或者把超时时间设得很长。
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# 只有在开发模式下生效 (通过 DEBUG 判断或单独的 ENV)
+if DEBUG:
+    # 方案 A: 彻底禁用心跳 (推荐用于 solo 调试)
+    CELERY_BROKER_HEARTBEAT = 0
+else:
+    # 方案 B: 生产环境保持心跳，但允许稍微长一点的超时
+    CELERY_BROKER_HEARTBEAT = 60 # 默认是 None (协商) 或 60s
+
 # ==============================================================================
 # CRISPY FORMS CONFIGURATION
 # ==============================================================================

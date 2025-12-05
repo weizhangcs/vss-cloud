@@ -125,9 +125,3 @@ class NarrationResult(BaseModel):
         if not v:
             raise ValueError("Generated narration script is empty!")
         return v
-
-    @validator('narration_script')
-    def script_must_not_be_empty(cls, v):
-        if not v:
-            raise ValueError("Generated narration script is empty!")
-        return v
