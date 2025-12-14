@@ -44,8 +44,8 @@ class Task(TimeStampedModel):
         blank=True,
         verbose_name=_("Assigned Edge")
     )
-    task_type = TextChoicesField(
-        choices_enum=TaskType,
+    task_type = models.CharField(  # 【关键修改：改为 models.CharField】
+        choices=TaskType.choices,  # 使用原生的 choices 属性
         max_length=30,
         verbose_name=_("Task Type")
     )

@@ -14,6 +14,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='task',
             name='task_type',
-            field=django_choices_field.fields.TextChoicesField(choices=[('DEPLOY_RAG_CORPUS', 'Deploy RAG Corpus'), ('CHARACTER_IDENTIFIER', 'Character Identifier'), ('GENERATE_NARRATION', 'Generate Narration'), ('GENERATE_DUBBING', 'Generate Dubbing'), ('GENERATE_EDITING_SCRIPT', 'Generate Editing Script')], max_length=30, verbose_name='Task Type'),
+            field=django_choices_field.fields.TextChoicesField(choices=[('DEPLOY_RAG_CORPUS', 'Deploy RAG Corpus'), ('CHARACTER_IDENTIFIER', 'Character Identifier'), ('GENERATE_NARRATION', 'Generate Narration'), ('GENERATE_DUBBING', 'Generate Dubbing'), ('GENERATE_EDITING_SCRIPT', 'Generate Editing Script'), ('LOCALIZE_NARRATION', 'Localize Narration')], max_length=30, verbose_name='Task Type'),
         ),
     ]
