@@ -1,4 +1,5 @@
-# utils/views.py
+# file_service/views.py
+
 import uuid
 import logging
 from pathlib import Path
@@ -14,46 +15,56 @@ from rest_framework.generics import get_object_or_404
 
 from task_manager.authentication import EdgeInstanceAuthentication
 from core.permissions import IsEdgeAuthenticated
-# [新增] 引入异常
 from core.exceptions import BizException
 from core.error_codes import ErrorCode
-
 from task_manager.models import Task
-from .serializers import FileUploadSerializer
+
+# 引入新的 Pydantic Schema
+from .schemas import FileUploadResponse
 
 logger = logging.getLogger(__name__)
 
 
 class FileUploadView(APIView):
+    """
+    文件上传接口。
+    """
     authentication_classes = [EdgeInstanceAuthentication]
     permission_classes = [IsEdgeAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs):
-        serializer = FileUploadSerializer(data=request.data)
-        if not serializer.is_valid():
-            # [优化] 让 DRF 错误通过全局 Handler 渲染
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # [Refactor] 1. 手动参数校验 (替代 DRF Serializer)
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            # 抛出标准业务异常
+            raise BizException(ErrorCode.INVALID_PARAM, msg="Missing required field 'file' in multipart/form-data.")
 
-        uploaded_file = serializer.validated_data['file']
+        # 2. 业务逻辑：保存文件
         fs = FileSystemStorage(location=settings.SHARED_TMP_ROOT)
         unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
 
         try:
             saved_name = fs.save(unique_filename, uploaded_file)
             relative_path_from_root = Path(settings.SHARED_TMP_ROOT.name) / saved_name
-            return Response(
-                {"relative_path": str(relative_path_from_root)},
-                status=status.HTTP_201_CREATED
+
+            # [Refactor] 3. 使用 Pydantic 构造响应数据
+            response_schema = FileUploadResponse(
+                relative_path=str(relative_path_from_root)
             )
+
+            # 使用 model_dump() 序列化为字典 (Pydantic V2)
+            return Response(response_schema.model_dump(), status=status.HTTP_201_CREATED)
+
         except Exception as e:
-            # [优化] 抛出业务异常
             raise BizException(ErrorCode.FILE_IO_ERROR, msg=f"Could not save file: {e}")
 
 
 class TaskResultDownloadView(APIView):
+    """
+    任务结果下载接口。保持原有逻辑，仅命名空间变动。
+    """
     authentication_classes = [EdgeInstanceAuthentication]
-    # [核心修改] 添加权限
     permission_classes = [IsEdgeAuthenticated]
 
     def get(self, request, task_id, *args, **kwargs):
@@ -62,8 +73,6 @@ class TaskResultDownloadView(APIView):
         task = get_object_or_404(queryset, pk=task_id)
 
         if task.status != Task.TaskStatus.COMPLETED:
-            # [优化] 抛出业务异常 (Task not ready)
-            # 使用 HTTP 425 Too Early 或 400
             raise BizException(ErrorCode.TASK_EXECUTION_FAILED, msg="Task is not yet completed.",
                                status_code=status.HTTP_425_TOO_EARLY)
 
@@ -81,14 +90,16 @@ class TaskResultDownloadView(APIView):
             return FileResponse(file_path.open('rb'), as_attachment=True, filename=file_path.name)
 
         except Http404:
-            raise  # 让全局处理 404
+            raise
         except Exception as e:
             raise BizException(ErrorCode.FILE_IO_ERROR, msg=str(e))
 
 
 class GenericFileDownloadView(APIView):
+    """
+    通用文件下载接口。保持原有逻辑，仅命名空间变动。
+    """
     authentication_classes = [EdgeInstanceAuthentication]
-    # [核心修改] 添加权限
     permission_classes = [IsEdgeAuthenticated]
 
     def get(self, request, *args, **kwargs):
@@ -100,6 +111,7 @@ class GenericFileDownloadView(APIView):
             file_path = (settings.SHARED_ROOT / relative_path_str).resolve()
             shared_root_abs = settings.SHARED_ROOT.resolve()
 
+            # 路径遍历防御
             if shared_root_abs not in file_path.parents:
                 raise BizException(ErrorCode.PERMISSION_DENIED, msg="Path traversal detected.", status_code=403)
 
@@ -111,6 +123,5 @@ class GenericFileDownloadView(APIView):
         except Http404:
             raise
         except Exception as e:
-            # 捕获其他路径解析错误
             if isinstance(e, BizException): raise e
             raise BizException(ErrorCode.FILE_IO_ERROR, msg=f"Download failed: {e}")

@@ -102,7 +102,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(
-                    reverse('utils:task-download', kwargs={'task_id': obj.id})  # <-- [修改]
+                    reverse('file_service:task-download', kwargs={'task_id': obj.id})
                 )
         return None
 

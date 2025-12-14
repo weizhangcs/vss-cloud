@@ -12,7 +12,7 @@ project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 # 导入引导程序 (用于加载 .env 等)
-from utils.local_execution_bootstrap import bootstrap_local_env_and_logger
+from tests.lib.bootstrap import bootstrap_local_env_and_logger
 
 
 class NarrationQueryBuilder:

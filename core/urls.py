@@ -25,7 +25,7 @@ urlpatterns = [
     # --- [核心修改] ---
     # 将所有 API 移到 i18n_patterns 之外
     # 它们将不再有 /en/ 前缀，也不会触发重定向
-    path('api/v1/files/', include('utils.urls', namespace='utils')),
+    path('api/v1/files/', include('file_service.urls', namespace='file_service')),
     path('api/v1/tasks/', include('task_manager.urls', namespace='task_manager')),
     # ------------------
 ]

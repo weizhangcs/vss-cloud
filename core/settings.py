@@ -87,7 +87,7 @@ INSTALLED_APPS = [
     # --- 在这里添加您的新 App ---
     'organization',
     'task_manager',
-    'utils',
+    'file_service',
     'ai_services',
     # ---------------------------
 ]

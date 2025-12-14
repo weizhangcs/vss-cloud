@@ -4,7 +4,7 @@ from django.conf import settings
 from task_manager.models import Task
 from ai_services.rag.deployer import RagDeployer
 from ai_services.rag.schemas import load_i18n_strings
-from utils.gcs_utils import upload_file_to_gcs
+from file_service.infrastructure.gcs_storage import upload_file_to_gcs
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
 # [新增导入] 适配层和异常处理

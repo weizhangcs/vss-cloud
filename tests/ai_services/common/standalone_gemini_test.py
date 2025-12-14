@@ -12,7 +12,7 @@ sys.path.append(str(project_root))
 # 导入核心依赖
 try:
     from ai_services.common.gemini.gemini_processor import GeminiProcessor
-    from utils.local_execution_bootstrap import bootstrap_local_env_and_logger
+    from tests.lib.bootstrap import bootstrap_local_env_and_logger
 except ImportError as e:
     print(f"致命错误：无法导入核心依赖。请检查您的文件结构。错误: {e}")
     sys.exit(1)
