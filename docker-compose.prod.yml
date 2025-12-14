@@ -1,41 +1,58 @@
 # docker-compose.prod.yml
+# 描述: 生产环境配置
+# 特性: 统一目录结构 + 生产级稳定性配置 + 兼容 base.yml
 
 services:
+  # --- 基础服务 (复用 base.yml，仅覆盖生产特有配置) ---
   db:
-    image: postgres:16-alpine
-    restart: always
+    # 仅保留生产特有配置，基础配置继承自 base.yml
     volumes:
-      - ./prod_data/postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql  # 复用命名卷，由下方绑定到 prod_data
+    restart: always
 
   redis:
-    image: redis:7-alpine
-    restart: always
+    # 仅保留生产特有配置，基础配置继承自 base.yml
     volumes:
-      - ./prod_data/redis:/data
+      - redis_data:/data  # 复用命名卷，由下方绑定到 prod_data
+    restart: always
 
+  # --- 应用服务 (统一目录结构 + 增强稳定性) ---
   web:
     image: ghcr.io/weizhangcs/vss-cloud:latest
     command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
     expose:
       - 8000
     volumes:
-      - ./staticfiles:/app/staticfiles
-      - ./shared_media:/app/shared_media
+      # 统一纳入 prod_data 目录，匹配脚本创建的结构
+      - ./prod_data/staticfiles:/app/staticfiles
+      - ./prod_data/shared_media:/app/shared_media
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro  # 继承 base.yml 的 GCP 凭证挂载
     depends_on:
       - db
       - redis
     env_file:
       - .env
+    environment:
+      - TZ=Asia/Shanghai  # 新增：生产环境时区统一
+    restart: always       # 强化重启策略
 
-  # --- Worker 生产配置 (流控策略) ---
-
+  # --- Worker 生产配置 (流控策略 + 稳定性增强) ---
   worker_gemini:
     image: ghcr.io/weizhangcs/vss-cloud:latest
     restart: always
     # [流控] 限制并发为 2，严格保护 Google API 配额
     command: celery -A core worker -Q queue_gemini -c 2 -l info
     volumes:
-      - ./shared_media:/app/shared_media
+      - ./prod_data/shared_media:/app/shared_media
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
+    depends_on:  # 新增：依赖 DB/Redis，避免提前启动
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
 
   worker_audio:
     image: ghcr.io/weizhangcs/vss-cloud:latest
@@ -43,7 +60,16 @@ services:
     # [流控] 限制并发为 4，平衡 CPU 负载
     command: celery -A core worker -Q queue_audio -c 4 -l info
     volumes:
-      - ./shared_media:/app/shared_media
+      - ./prod_data/shared_media:/app/shared_media
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
 
   worker_io:
     image: ghcr.io/weizhangcs/vss-cloud:latest
@@ -51,17 +77,51 @@ services:
     # [流控] 并发 8，最大化 IO 吞吐
     command: celery -A core worker -Q queue_io,celery -c 8 -l info
     volumes:
-      - ./shared_media:/app/shared_media
+      - ./prod_data/shared_media:/app/shared_media
+      - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
 
+  # --- Nginx 生产配置 (稳定性增强) ---
   nginx:
     image: nginx:1.25-alpine
     ports:
       - "80:80"
     volumes:
       - ./conf/nginx.template.conf:/etc/nginx/conf.d/default.conf.template
-      - ./staticfiles:/app/staticfiles:ro
+      - ./prod_data/staticfiles:/app/staticfiles:ro  # 统一纳入 prod_data 目录
     depends_on:
       - web
     environment:
       - SERVER_DOMAIN
+      - TZ=Asia/Shanghai  # 新增：时区配置
     entrypoint: /bin/sh -c "envsubst '$$SERVER_DOMAIN' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+    restart: always  # 新增：生产环境自动重启
+    # 新增：健康检查，及时发现配置/服务异常
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+# --- 核心适配：绑定脚本创建的 prod_data 目录 ---
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./prod_data/postgres  # 匹配脚本创建的 prod_data/postgres
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./prod_data/redis    # 匹配脚本创建的 prod_data/redis

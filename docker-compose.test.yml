@@ -4,63 +4,100 @@
 
 services:
   db:
-    # 测试环境暴露数据库端口，方便远程直连调试
+    # 继承 base 配置，新增测试环境端口暴露
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/postgres:16-alpine
     ports:
       - "5432:5432"
 
   redis:
-    # 测试环境暴露 Redis 端口
+    # 继承 base 配置，新增测试环境端口暴露
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/redis:7-alpine
     ports:
       - "6379:6379"
 
   web:
-    image: ghcr.io/weizhangcs/vss-cloud:dev
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_cloud/cloud:v1.3.0-alpha.temp
     # 使用 Gunicorn 模拟生产运行方式
     command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
     expose:
       - 8000
     volumes:
-      - ./staticfiles:/app/staticfiles
-      - ./shared_media:/app/shared_media
-    # 环境变量、依赖关系继承自 base
+      # 挂载到脚本创建的 test_data 目录下，统一目录结构
+      - ./test_data/staticfiles:/app/staticfiles
+      - ./test_data/shared_media:/app/shared_media
+    # 新增：时区同步
+    environment:
+      - TZ=Asia/Shanghai
+    # 新增：重启策略
+    restart: unless-stopped
 
   # --- [适配] Worker 测试环境配置 ---
-  # 使用 :dev 镜像，但应用与 Prod 一致的并发策略进行压测
-
+  # 统一镜像版本为 dev，保持测试环境一致性
   worker_gemini:
-    image: ghcr.io/weizhangcs/vss-cloud:dev
-    restart: always
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_cloud/cloud:v1.3.0-alpha.temp
+    restart: unless-stopped
     # [压测配置] 保持生产级并发 (2)，测试高负载下的 API 稳定性
     command: celery -A core worker -Q queue_gemini -c 2 -l info
     volumes:
-      - ./shared_media:/app/shared_media
+      - ./test_data/shared_media:/app/shared_media
+    # 新增：时区同步
+    environment:
+      - TZ=Asia/Shanghai
 
   worker_audio:
-    image: ghcr.io/weizhangcs/vss-cloud:dev
-    restart: always
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_cloud/cloud:v1.3.0-alpha.temp
+    restart: unless-stopped
     # [压测配置] 保持生产级并发 (4)
     command: celery -A core worker -Q queue_audio -c 4 -l info
     volumes:
-      - ./shared_media:/app/shared_media
+      - ./test_data/shared_media:/app/shared_media
+    environment:
+      - TZ=Asia/Shanghai
 
   worker_io:
-    image: ghcr.io/weizhangcs/vss-cloud:dev
-    restart: always
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_cloud/cloud:v1.3.0-alpha.temp
+    restart: unless-stopped
     # [压测配置] 保持生产级并发 (8)
     command: celery -A core worker -Q queue_io,celery -c 8 -l info
     volumes:
-      - ./shared_media:/app/shared_media
+      - ./test_data/shared_media:/app/shared_media
+    environment:
+      - TZ=Asia/Shanghai
 
   nginx:
-    image: nginx:1.25-alpine
+    image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/nginx:1.25-alpine
     # 测试环境监听 8080，避免与宿主机 80 冲突
     ports:
       - "8080:80"
     volumes:
       - ./conf/nginx.template.conf:/etc/nginx/conf.d/default.conf.template
-      - ./staticfiles:/app/staticfiles:ro
+      - ./test_data/staticfiles:/app/staticfiles:ro
     depends_on:
       - web
     environment:
       - SERVER_DOMAIN
+      - TZ=Asia/Shanghai  # 新增：时区配置
     entrypoint: /bin/sh -c "envsubst '$$SERVER_DOMAIN' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+    # 新增：重启策略
+    restart: unless-stopped
+    # 新增：健康检查
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+# --- 核心适配：绑定脚本创建的 test_data 目录 ---
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./test_data/postgres  # 匹配脚本创建的 test_data/postgres
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./test_data/redis    # 匹配脚本创建的 test_data/redis

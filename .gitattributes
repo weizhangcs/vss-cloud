@@ -4,6 +4,9 @@
 # 【关键】所有 Shell 脚本必须强制使用 LF (解决 "No such file or directory" 问题)
 *.sh text eol=lf
 
+# 【核心新增】.env.template 强制 LF 换行符（保证 init.sh 生成 .env 时格式正确）
+.env.template text eol=lf
+
 # 【推荐】配置文件和容器文件强制 LF
 Dockerfile text eol=lf
 docker-compose*.yml text eol=lf
