@@ -107,7 +107,7 @@ class LocalizationHandler(BaseTaskHandler):
             location=settings.GOOGLE_CLOUD_LOCATION,
             prompts_dir=narration_base / 'prompts',
             metadata_dir=narration_base / 'metadata',
-            rag_schema_path=settings.BASE_DIR / 'ai_services' / 'rag' / 'metadata' / 'schemas.json',
+            rag_schema_path=settings.BASE_DIR / 'ai_services' / 'ai_platform' / 'rag' / 'metadata' / 'schemas.json',
             logger=self.logger,
             work_dir=temp_dir,  # 使用任务的临时目录
             gemini_processor=gemini_processor,

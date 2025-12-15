@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import ValidationError
 
 # [核心升级] 引入 NarrativeBlueprint 进行强校验
-from ai_services.rag.schemas import Scene, NarrativeBlueprint
+from ai_services.ai_platform.rag.schemas import Scene, NarrativeBlueprint
 
 
 class ContextEnhancer:

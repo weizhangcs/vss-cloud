@@ -2,8 +2,8 @@ import json  # [新增] 用于处理 JSON 读写
 from pathlib import Path
 from django.conf import settings
 from task_manager.models import Task
-from ai_services.rag.deployer import RagDeployer
-from ai_services.rag.schemas import load_i18n_strings
+from ai_services.ai_platform.rag.deployer import RagDeployer
+from ai_services.ai_platform.rag.schemas import load_i18n_strings
 from file_service.infrastructure.gcs_storage import upload_file_to_gcs
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
@@ -78,7 +78,7 @@ class RagDeploymentHandler(BaseTaskHandler):
         )
 
         # 加载 i18n (保持不变)
-        i18n_path = settings.BASE_DIR / 'ai_services' / 'rag' / 'metadata' / 'schemas.json'
+        i18n_path = settings.BASE_DIR / 'ai_services' / 'ai_platform' / 'rag' / 'metadata' / 'schemas.json'
         load_i18n_strings(i18n_path)
 
         # 执行部署 (使用转换后的 local_blueprint_path)

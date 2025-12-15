@@ -6,17 +6,17 @@ import json
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Union
 
 import vertexai
-from vertexai import rag
 from google.cloud import storage
 from google.api_core import exceptions as google_exceptions
 from core.exceptions import RateLimitException # [新增]
 
-# 从同级目录的 schemas.py 导入Pydantic模型
+from .corpus_manager import CorpusManager
+from .data_manager import DataManager
 from .schemas import NarrativeBlueprint, IdentifiedFact
 
+from file_service.infrastructure.gcs_storage import upload_directory_to_gcs
 
 class RagDeployer:
     """
@@ -44,10 +44,12 @@ class RagDeployer:
         self.location = location
         self.logger = logger
 
-        # 初始化Vertex AI SDK，只需要在服务实例化时执行一次。
+        # 初始化 Managers
         try:
             vertexai.init(project=self.project_id, location=self.location)
-            self.logger.info(f"RagDeployer initialized for project '{self.project_id}' in '{self.location}'")
+            self.corpus_manager = CorpusManager()
+            self.data_manager = DataManager()
+            self.logger.info(f"RagDeployer initialized (Project: {project_id}, Location: {location})")
         except Exception as e:
             self.logger.error(f"Vertex AI initialization failed: {e}", exc_info=True)
             raise
@@ -58,7 +60,7 @@ class RagDeployer:
                 facts_path: Path,
                 gcs_bucket_name: str,
                 staging_dir: Path,
-                org_id: str,  # [修改] instance_id -> org_id
+                org_id: str,
                 asset_id: str):
         """
         执行完整的部署流程。
@@ -72,7 +74,6 @@ class RagDeployer:
             facts_path (Path): 本地临时目录中 character_facts.json 文件的路径。
             gcs_bucket_name (str): 用于暂存RAG源文件的GCS桶名称。
             staging_dir (Path): 用于在本地生成富文本文档的临时目录。
-            instance_id (str): 租户实例ID，用于在GCS中创建隔离的文件夹结构。
 
         Returns:
             Dict: 一个包含部署结果信息的字典，用于Celery Task记录。
@@ -80,7 +81,7 @@ class RagDeployer:
         self.logger.info("=" * 20 + f" 🚀 RAG 部署任务启动 (Corpus: {corpus_display_name}) 🚀 " + "=" * 20)
 
         try:
-            # 步骤 1 & 2: 在本地融合数据并生成RAG所需的富文本文件，同时构建GCS的目标URI。
+            # 步骤 1 & 2: 本地数据融合与生成 (保持原有逻辑)
             gcs_uri, total_scenes = self._fuse_and_prepare_files(
                 source_blueprint_path=blueprint_path,
                 enhanced_facts_path=facts_path,
@@ -90,25 +91,19 @@ class RagDeployer:
                 asset_id=asset_id
             )
 
-            # 步骤 3: 将本地生成的富文本文件批量上传到GCS。
+            # 步骤 3: 上传到 GCS (保持原有逻辑)
             self._upload_dir_to_gcs(
                 local_dir=staging_dir,
                 gcs_uri=gcs_uri,
             )
 
-            # 步骤 4: 指示Vertex AI RAG引擎从GCS拉取并同步文件。
+            # 步骤 4: 部署到 RAG Engine (使用 Manager)
             self._deploy_to_rag_engine(
                 corpus_display_name=corpus_display_name,
                 gcs_uri=gcs_uri
             )
 
-            self.logger.info("=" * 70)
-            self.logger.info(f"✅ 租户 '{org_id}' 的RAG部署任务已成功启动！")
-            self.logger.info(f"   目标语料库: {corpus_display_name}")
-            self.logger.info("   请前往Google Cloud控制台查看文件导入进度。")
-            self.logger.info("=" * 70 + "\n")
-
-            # 返回关键信息，以便Celery Task存入最终的任务结果中。
+            self.logger.info(f"✅ RAG 部署成功完成。Total Scenes: {total_scenes}")
             return {
                 "message": "RAG deployment process initiated successfully.",
                 "corpus_name": corpus_display_name,
@@ -116,13 +111,10 @@ class RagDeployer:
                 "total_scene_count": total_scenes
             }
 
-
         except Exception as e:
-            # [修正] 转译 Google 限流异常
             if isinstance(e, (google_exceptions.TooManyRequests, google_exceptions.ResourceExhausted)):
                 raise RateLimitException(msg=str(e), provider="GoogleVertexAI") from e
             self.logger.critical(f"部署流程发生严重错误: {e}", exc_info=True)
-
             raise
 
     def _fuse_and_prepare_files(self, source_blueprint_path: Path, enhanced_facts_path: Path, staging_dir: Path,
@@ -131,7 +123,9 @@ class RagDeployer:
         self.logger.info(f"▶️ 步骤 1/4: 正在加载租户 '{org_id}' 的源数据......")
         try:
             # 使用Pydantic模型加载和验证输入文件，确保数据结构正确。
-            blueprint = NarrativeBlueprint.parse_file(source_blueprint_path)
+            json_content = source_blueprint_path.read_text(encoding='utf-8')
+            blueprint = NarrativeBlueprint.model_validate_json(json_content)
+
             with enhanced_facts_path.open('r', encoding='utf-8') as f:
                 facts_data = json.load(f)
 
@@ -187,49 +181,43 @@ class RagDeployer:
 
     def _upload_dir_to_gcs(self, local_dir: Path, gcs_uri: str):
         """将本地目录中的所有.txt文件上传到指定的GCS路径。"""
-        bucket_name = gcs_uri.split("/")[2]
-        gcs_prefix = "/".join(gcs_uri.split("/")[3:])
-        self.logger.info(f"▶️ 步骤 4/4: 正在将暂存目录上传到 GCS 路径: '{gcs_uri}'...")
-        try:
-            storage_client = storage.Client(project=self.project_id)
-            bucket = storage_client.bucket(bucket_name)
+        if not gcs_uri.startswith("gs://"):
+            raise ValueError(f"Invalid GCS URI: {gcs_uri}")
 
-            # 遍历本地暂存目录中的所有txt文件并上传。
-            for local_file in local_dir.glob("*.txt"):
-                blob = bucket.blob(f"{gcs_prefix}/{local_file.name}")
-                blob.upload_from_filename(str(local_file))
-            self.logger.info(f"✅ 所有文件上传成功！")
+        parts = gcs_uri.replace("gs://", "").split("/", 1)
+        bucket_name = parts[0]
+        # 如果没有后续路径，prefix 为空字符串
+        gcs_prefix = parts[1] if len(parts) > 1 else ""
+
+        self.logger.info(f"▶️ 步骤 4/4: 正在调用 file_service 上传目录到: '{gcs_uri}'...")
+
+        try:
+            # 直接调用基础设施层的通用方法
+            upload_directory_to_gcs(
+                local_dir=local_dir,
+                bucket_name=bucket_name,
+                gcs_prefix=gcs_prefix
+            )
+            self.logger.info(f"✅ 所有文件上传成功 (via file_service)！")
         except Exception as e:
             self.logger.error(f"❌ 错误: 上传到GCS失败: {e}", exc_info=True)
             raise
 
     def _deploy_to_rag_engine(self, corpus_display_name: str, gcs_uri: str):
-        """创建或更新RAG语料库，并从GCS导入文件。"""
-        self.logger.info(f"▶️ [最终步骤]: 正在向RAG语料库 '{corpus_display_name}' 同步数据...")
-        try:
-            # 幂等性检查：首先列出所有语料库，查找是否存在同名实例。
-            corpora = rag.list_corpora()
-            rag_corpus = next((c for c in corpora if c.display_name == corpus_display_name), None)
+        """使用 CorpusManager 和 DataManager 完成部署。"""
+        self.logger.info(f"▶️ [最终步骤]: 同步数据至 RAG Engine...")
 
-            # 如果语料库不存在，则创建一个新的。
-            if not rag_corpus:
-                self.logger.info(f"   未找到语料库 '{corpus_display_name}'。正在创建新的语料库...")
-                rag_corpus = rag.create_corpus(display_name=corpus_display_name)
-                self.logger.info("✅ 新语料库创建成功。")
-            else:
-                self.logger.info("✅ RAG语料库已存在，将进行文件同步/更新。")
+        # 1. 获取或创建 Corpus
+        corpus = self.corpus_manager.get_corpus_by_display_name(corpus_display_name)
+        if not corpus:
+            self.logger.info(f"   Corpus '{corpus_display_name}' 不存在，正在创建...")
+            corpus = self.corpus_manager.create_corpus(display_name=corpus_display_name)
+        else:
+            self.logger.info(f"   Corpus '{corpus_display_name}' 已存在 (ID: {corpus.name})，准备更新。")
 
-            # 发起文件导入请求。这是一个异步操作，API会立即返回。
-            # RAG引擎会在后台从GCS拉取、解析、分块并索引文件。
-            self.logger.info(f"   正在从 GCS URI: {gcs_uri} 发起文件导入请求...")
-            rag.import_files(
-                rag_corpus.name,
-                [gcs_uri],
-                transformation_config=rag.TransformationConfig(
-                    chunking_config=rag.ChunkingConfig(chunk_size=512, chunk_overlap=50)
-                )
-            )
-            self.logger.info("✅ 文件导入请求已成功发起。")
-        except Exception as e:
-            self.logger.error(f"❌ 错误: 处理RAG语料库时失败: {e}", exc_info=True)
-            raise
+        # 2. 导入文件
+        self.logger.info(f"   发起文件导入: {gcs_uri}")
+        self.data_manager.import_files(
+            corpus_name=corpus.name,
+            gcs_uris=[gcs_uri]
+        )

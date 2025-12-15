@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from ai_services.common.base_generator import BaseRagGenerator
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
 from ai_services.common.gemini.cost_calculator import CostCalculator
-from ai_services.rag.schemas import load_i18n_strings
+from ai_services.ai_platform.rag.schemas import load_i18n_strings
 from .schemas import NarrationServiceConfig, NarrationResult
 from .query_builder import NarrationQueryBuilder
 from .context_enhancer import ContextEnhancer

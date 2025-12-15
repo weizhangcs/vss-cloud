@@ -104,7 +104,7 @@ class NarrationHandler(BaseTaskHandler):
             location=settings.GOOGLE_CLOUD_LOCATION,
             prompts_dir=narration_base / 'prompts',
             metadata_dir=narration_base / 'metadata',
-            rag_schema_path=settings.BASE_DIR / 'ai_services' / 'rag' / 'metadata' / 'schemas.json',
+            rag_schema_path=settings.BASE_DIR / 'ai_services' / 'ai_platform' / 'rag' / 'metadata' / 'schemas.json',
             logger=self.logger,
             work_dir=settings.SHARED_TMP_ROOT / f"narration_task_{task.id}_workspace",
             gemini_processor=gemini_processor,

@@ -13,7 +13,7 @@ sys.path.append(str(project_root))
 
 from tests.lib.bootstrap import bootstrap_local_env_and_logger
 from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.rag.schemas import load_i18n_strings
+from ai_services.ai_platform.rag.schemas import load_i18n_strings
 
 
 # 复用之前验证过的类 (为了演示完整性，这里简化引入或直接定义)
@@ -95,7 +95,7 @@ def main():
 
     # 1. 准备依赖
     # 加载 RAG 语言包 (Stage 2 依赖)
-    load_i18n_strings(project_root / "ai_services" / "rag" / "metadata" / "schemas.json")
+    rag_schema_path = project_root / "ai_services" / "ai_platform" / "rag" / "metadata" / "schemas.json"
 
     gemini_processor = GeminiProcessor(
         api_key=settings.GOOGLE_API_KEY,

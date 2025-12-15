@@ -208,7 +208,7 @@ def main():
     narration_base = project_root / "ai_services" / "narration"
     prompts_dir = narration_base / "prompts"
     metadata_dir = narration_base / "metadata"
-    rag_schema_path = project_root / "ai_services" / "rag" / "metadata" / "schemas.json"
+    rag_schema_path = project_root / "ai_services" / "ai_platform" / "rag" / "metadata" / "schemas.json"
 
     # [修改] 输出目录归整到 shared_media/outputs/
     output_dir = project_root / "shared_media" / "outputs" / "narration_v2_test_result"
