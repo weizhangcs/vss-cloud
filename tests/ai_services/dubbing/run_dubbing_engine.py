@@ -20,8 +20,8 @@ project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 from tests.lib.bootstrap import bootstrap_local_env_and_logger
-from ai_services.dubbing.dubbing_engine import DubbingEngine
-from ai_services.dubbing.strategies.base_strategy import TTSStrategy
+from ai_services.biz_services.dubbing.dubbing_engine import DubbingEngine
+from ai_services.ai_platform.tts.strategies.base_strategy import TTSStrategy
 
 
 # ==============================================================================

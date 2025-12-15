@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 from .base_strategy import ReplicationStrategy
-from ai_services.dubbing.text_segmenter import MultilingualTextSegmenter
-from ai_services.dubbing.audio_utils import merge_audio_files_ffmpeg
+from ai_services.ai_platform.tts.text_segmenter import MultilingualTextSegmenter
+from ai_services.ai_platform.tts.audio_utils import merge_audio_files_ffmpeg
 
 logger = logging.getLogger(__name__)
 

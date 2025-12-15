@@ -5,10 +5,10 @@ from typing import Dict
 from django.conf import settings
 from task_manager.models import Task
 # 注意：引用去除了 V2 后缀的引擎
-from ai_services.dubbing.dubbing_engine import DubbingEngine
-from ai_services.dubbing.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy
-from ai_services.dubbing.strategies.google_tts_strategy import GoogleTTSStrategy
-from ai_services.dubbing.strategies.base_strategy import TTSStrategy
+from ai_services.biz_services.dubbing.dubbing_engine import DubbingEngine
+from ai_services.ai_platform.tts.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy
+from ai_services.ai_platform.tts.strategies.google_tts_strategy import GoogleTTSStrategy
+from ai_services.ai_platform.tts.strategies.base_strategy import TTSStrategy
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
 

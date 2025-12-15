@@ -15,8 +15,8 @@ project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 from tests.lib.bootstrap import bootstrap_local_env_and_logger
-from ai_services.dubbing.dubbing_engine import DubbingEngine
-from ai_services.dubbing.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy
+from ai_services.biz_services.dubbing.dubbing_engine import DubbingEngine
+from ai_services.ai_platform.tts.strategies.aliyun_paieas_strategy import AliyunPAIEASStrategy
 
 
 def main():
@@ -103,7 +103,7 @@ def main():
 
     # 4.2 模板 (Mock 一个使用 replication 的模板)
     # 注意：这里我们需要一个真实的参考音频路径
-    ref_audio_rel_path = "ai_services/dubbing/reference/zero_shot_prompt.wav"
+    ref_audio_rel_path = "ai_services/biz_services/dubbing/reference/zero_shot_prompt.wav"
     ref_audio_abs_path = project_root / "shared_media" / ref_audio_rel_path
 
     if not ref_audio_abs_path.exists():

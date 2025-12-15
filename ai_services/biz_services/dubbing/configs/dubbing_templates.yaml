@@ -24,7 +24,7 @@ chinese_paieas_replication:
   # [核心修改] 不再硬编码ID，而是提供源文件信息
   replication_source:
     # [重要] 请将此路径替换为您本地参考音频文件的绝对路径
-    audio_path: "/app/ai_services/dubbing/reference/zero_shot_prompt.wav"
+    audio_path: "/app/ai_services/biz_services/dubbing/reference/zero_shot_prompt.wav"
     # 参考音频对应的文本
     text: "希望你以后能够做得比我还好哟"
   params:

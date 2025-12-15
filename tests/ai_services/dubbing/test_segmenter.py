@@ -8,7 +8,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
-from ai_services.dubbing.text_segmenter import MultilingualTextSegmenter
+from ai_services.ai_platform.tts.text_segmenter import MultilingualTextSegmenter
 
 # 配置简单日志
 logging.basicConfig(level=logging.INFO, format='%(message)s')

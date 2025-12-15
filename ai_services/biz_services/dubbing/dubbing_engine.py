@@ -5,7 +5,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List
 
-from .strategies.base_strategy import TTSStrategy, ReplicationStrategy
+
+from ai_services.ai_platform.tts.strategies.base_strategy import TTSStrategy, ReplicationStrategy
 
 from core.exceptions import BizException, RateLimitException
 from core.error_codes import ErrorCode
