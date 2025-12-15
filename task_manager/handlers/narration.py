@@ -3,10 +3,9 @@ import yaml
 from pathlib import Path
 from django.conf import settings
 from task_manager.models import Task
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.common.gemini.cost_calculator import CostCalculator
-# from ai_services.narration.narration_generator_v3 import NarrationGeneratorV3
-from ai_services.narration.narration_generator_v4 import NarrationGeneratorV3
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
+from ai_services.ai_platform.llm.cost_calculator import CostCalculator
+from ai_services.biz_services.narration.narration_generator import NarrationGenerator
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
 # [新增导入] 适配层和异常处理
@@ -99,7 +98,7 @@ class NarrationHandler(BaseTaskHandler):
         narration_base = settings.BASE_DIR / 'ai_services' / 'narration'
 
         # 3. 实例化 V3 Generator
-        generator = NarrationGeneratorV3(
+        generator = NarrationGenerator(
             project_id=settings.GOOGLE_CLOUD_PROJECT,
             location=settings.GOOGLE_CLOUD_LOCATION,
             prompts_dir=narration_base / 'prompts',

@@ -11,8 +11,8 @@ sys.path.append(str(project_root))
 # 导入“引导程序”和我们重构后的业务逻辑
 from tests.lib.bootstrap import bootstrap_local_env_and_logger
 from ai_services.analysis.character.character_identifier import CharacterIdentifier
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.common.gemini.cost_calculator import CostCalculator
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
+from ai_services.ai_platform.llm.cost_calculator import CostCalculator
 
 def main():
     settings, logger = bootstrap_local_env_and_logger(project_root)

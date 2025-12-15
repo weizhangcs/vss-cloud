@@ -8,10 +8,9 @@ import vertexai
 from vertexai import rag
 from pydantic import BaseModel
 
-from ai_services.common.gemini.ai_service_mixin import AIServiceMixin
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
-# [New] 引入 CostCalculator 类型提示
-from ai_services.common.gemini.cost_calculator import CostCalculator
+from .mixins import AIServiceMixin
+from .gemini_processor import GeminiProcessor
+from .cost_calculator import CostCalculator
 
 
 class BaseRagGenerator(AIServiceMixin, ABC):

@@ -11,9 +11,9 @@ from collections import defaultdict
 from pydantic import ValidationError
 
 # 导入项目内部依赖
-from ai_services.common.gemini.ai_service_mixin import AIServiceMixin
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.common.gemini.cost_calculator import CostCalculator
+from ai_services.ai_platform.llm.mixins import AIServiceMixin
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
+from ai_services.ai_platform.llm.cost_calculator import CostCalculator
 from core.error_codes import ErrorCode
 from core.exceptions import BizException
 

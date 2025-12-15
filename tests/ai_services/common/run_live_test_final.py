@@ -17,8 +17,8 @@ if str(project_root) not in sys.path:
 # --- 导入 V1 Processor (genai) 和 V3 Calculator (价格修正) ---
 # 注意: 确保 cost_calculator_v3.py 文件存在于你的本地目录中
 try:
-    from ai_services.common.gemini.gemini_processor import GeminiProcessor
-    from ai_services.common.gemini.cost_calculator import CostCalculator as CostCalculator
+    from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
+    from ai_services.ai_platform.llm.cost_calculator import CostCalculator
 except ImportError as e:
     print(f"致命错误: 导入失败。请确保文件存在: {e}")
     sys.exit(1)

@@ -7,7 +7,7 @@ import shutil
 from google.api_core import exceptions
 
 # 导入目标类
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
 
 # 创建一个 Mock Logger
 mock_logger = MagicMock(spec=logging.Logger)

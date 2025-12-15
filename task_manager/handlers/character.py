@@ -3,9 +3,9 @@ import yaml
 from pathlib import Path
 from django.conf import settings
 from task_manager.models import Task
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.common.gemini.cost_calculator import CostCalculator
-from ai_services.analysis.character.character_identifier import CharacterIdentifier
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
+from ai_services.ai_platform.llm.cost_calculator import CostCalculator
+from ai_services.biz_services.analysis.character.character_identifier import CharacterIdentifier
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
 

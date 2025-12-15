@@ -9,8 +9,9 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 # 导入项目内部依赖
-from ai_services.common.gemini.ai_service_mixin import AIServiceMixin
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
+
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
+from ai_services.ai_platform.llm.mixins import AIServiceMixin
 
 from core.exceptions import BizException, RateLimitException
 from core.error_codes import ErrorCode

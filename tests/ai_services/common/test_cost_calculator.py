@@ -1,7 +1,7 @@
 # tests/ai_services/common/test_cost_calculator.py
 
 import unittest
-from ai_services.common.gemini.cost_calculator import CostCalculator
+from ai_services.ai_platform.llm.cost_calculator import CostCalculator
 from typing import Dict, Any
 
 

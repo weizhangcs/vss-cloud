@@ -12,7 +12,7 @@ project_root = Path(__file__).resolve().parents[3]
 sys.path.append(str(project_root))
 
 from tests.lib.bootstrap import bootstrap_local_env_and_logger
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
 from ai_services.ai_platform.rag.schemas import load_i18n_strings
 
 

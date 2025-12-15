@@ -3,8 +3,8 @@ import yaml
 from pathlib import Path
 from django.conf import settings
 from task_manager.models import Task
-from ai_services.common.gemini.gemini_processor import GeminiProcessor
-from ai_services.editing.broll_selector_service import BrollSelectorService
+from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
+from ai_services.biz_services.editing.broll_selector_service import BrollSelectorService
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
 # [新增导入] 适配层和异常处理
