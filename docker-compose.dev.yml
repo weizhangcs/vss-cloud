@@ -1,61 +1,54 @@
 # docker-compose.dev.yml
-# 注意：version 字段已废弃（Docker Compose v1.27+）
-# version: '1.2.0'
+# -----------------------------------------------------------------------------
+# 描述: 开发环境 (Development)
+# 特性:
+#   1. 源码挂载 (Hot Reload)
+#   2. 单进程 Worker (便于调试)
+#   3. 数据不做物理绑定 (使用 Docker 匿名卷，保持项目目录整洁)
+# -----------------------------------------------------------------------------
 
 services:
+  # --- 基础设施 (使用阿里云私有镜像加速) ---
   db:
-    # [新增] 强制指向阿里云私有仓库
     image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/postgres:16-alpine
     ports:
-      - "8543:5432"
+      - "8543:5432" # 避免占用宿主机默认端口
 
-  # --- 覆盖 Redis 镜像源 ---
   redis:
-    # [新增] 强制指向阿里云私有仓库
     image: crpi-34v4qt829vtet2cy.cn-hangzhou.personal.cr.aliyuncs.com/vss_base/redis:7-alpine
     restart: always
     ports:
-      - "8637:6379"  # [新增] 左边是宿主机端口，右边是容器端口
+      - "8637:6379"
 
+  # --- 应用服务 (源码模式) ---
   web:
     build: .
     command: python manage.py runserver 0.0.0.0:8001
     volumes:
-      - .:/app # [Dev] 挂载源码
+      - .:/app # [Dev特有] 挂载当前目录源码
       - ./shared_media:/app/shared_media
     ports:
       - "8001:8001"
 
-  # --- [修复] Worker 开发环境配置 ---
-  # 关键修改：显式添加 command，强制指定并发数，防止读取宿主机核数导致爆炸
-
+  # --- Workers (调试模式) ---
+  # 策略: 使用 solo/threads 池，避免 prefork 导致的调试困难和资源锁死
   worker_gemini:
     build: .
-    # [新增] 显式指定命令，强制并发为 1 或 2，并在开发模式下使用 -P solo (或 threads) 以避免 prefork 问题
-    # 推荐开发环境使用 pool=solo，支持热重载且调试更稳定
     command: celery -A core worker -Q queue_gemini --pool=solo --without-gossip --without-mingle --without-heartbeat -l info
     volumes:
       - .:/app
       - ./shared_media:/app/shared_media
-    environment:
-      - C_FORCE_ROOT=true  # [新增] 解决 "Running worker with superuser privileges" 警告
 
   worker_audio:
     build: .
-    # [新增]
     command: celery -A core worker -Q queue_audio --pool=solo --without-gossip --without-mingle --without-heartbeat -l info
     volumes:
       - .:/app
       - ./shared_media:/app/shared_media
-    environment:
-      - C_FORCE_ROOT=true
 
   worker_io:
     build: .
-    # [新增]
     command: celery -A core worker -Q queue_io,celery --pool=solo --without-gossip --without-mingle --without-heartbeat -l info
     volumes:
       - .:/app
       - ./shared_media:/app/shared_media
-    environment:
-      - C_FORCE_ROOT=true

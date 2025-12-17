@@ -1,13 +1,17 @@
 # docker-compose.base.yml
-# 注意：version 字段已废弃（Docker Compose v1.27+）
-# version: '1.2.0'
+# -----------------------------------------------------------------------------
+# 描述: VSS Cloud 基础架构配置
+# 作用: 定义所有环境共用的服务拓扑、逻辑挂载点和环境变量。
+# 策略: 子环境文件 (dev/test/prod) 仅需覆盖差异项，无需重复定义。
+# -----------------------------------------------------------------------------
 
 services:
-  # --- 基础服务 (保持不变) ---
+  # --- 基础组件 (Infrastructure) ---
   db:
     image: postgres:16-alpine
     volumes:
-      - postgres_data:/var/lib/postgresql
+      # [核心] 逻辑挂载：所有环境统一指向容器内标准数据目录
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
@@ -20,14 +24,19 @@ services:
 
   redis:
     image: redis:7-alpine
+    volumes:
+      # [核心] 逻辑挂载：所有环境统一指向容器内标准数据目录
+      - redis_data:/data
     environment:
       - TZ=Asia/Shanghai
 
-  # --- 应用服务骨架 ---
+  # --- 应用骨架 (Application Skeleton) ---
   web:
+    # 依赖关系定义
     depends_on:
       - db
       - redis
+    # 共享配置：环境变量与 GCP 凭证
     env_file:
       - .env
     environment:
@@ -36,13 +45,11 @@ services:
     volumes:
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
 
-  # --- [架构升级] Worker 拓扑拆分 ---
-  # 说明：移除了原有的单体 'worker'，拆分为以下三组
-  # 所有 Worker 都继承相同的 环境变量 和 GCP凭证挂载
+  # --- 异步任务集群 (Worker Cluster) ---
+  # 说明: 拆分为三组以实现不同维度的流控与隔离
 
-  # 1. Gemini 专用 (低并发/配额敏感)
+  # 1. Gemini 专用 (配额敏感/低并发)
   worker_gemini:
-    # 基础命令：指定监听 queue_gemini
     command: celery -A core.celery worker -Q queue_gemini -l info
     depends_on:
       - db
@@ -52,12 +59,12 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
+      - C_FORCE_ROOT=true # 允许 Root 运行 (兼容 Windows/Docker 挂载权限)
     volumes:
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
 
   # 2. 音频处理 (计算密集/中并发)
   worker_audio:
-    # 基础命令：指定监听 queue_audio
     command: celery -A core.celery worker -Q queue_audio -l info
     depends_on:
       - db
@@ -67,12 +74,12 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
+      - C_FORCE_ROOT=true
     volumes:
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
 
   # 3. 通用/IO (高并发/兜底)
   worker_io:
-    # 基础命令：监听 queue_io 和 默认 celery 队列
     command: celery -A core.celery worker -Q queue_io,celery -l info
     depends_on:
       - db
@@ -82,8 +89,11 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - GOOGLE_APPLICATION_CREDENTIALS=/app/conf/gcp-credentials.json
+      - C_FORCE_ROOT=true
     volumes:
       - ./conf/gcp-credentials.json:/app/conf/gcp-credentials.json:ro
 
+# 定义顶层卷名 (具体物理路径由子文件决定)
 volumes:
   postgres_data:
+  redis_data:
