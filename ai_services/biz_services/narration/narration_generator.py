@@ -1,6 +1,3 @@
-# ai_services/narration/narration_generator_v3.py
-
-import re  # [新增] 用于正则清洗
 import json
 import logging
 from pathlib import Path
@@ -12,22 +9,23 @@ from pydantic import ValidationError
 from ai_services.ai_platform.llm.base_generator import BaseRagGenerator
 from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
 from ai_services.ai_platform.llm.cost_calculator import CostCalculator
-from ai_services.ai_platform.rag.schemas import load_i18n_strings
-from .schemas import NarrationServiceConfig, NarrationResult
-from .query_builder import NarrationQueryBuilder
-from .context_enhancer import ContextEnhancer
-from .validator import NarrationValidator
+
+from ai_services.biz_services.narration.schemas import NarrationServiceConfig, NarrationResult, NarrationSnippet
+from ai_services.biz_services.narrative_dataset import NarrativeDataset
+
+from .components.query_builder import NarrationQueryBuilder
+from .components.context_enhancer import ContextEnhancer
+from .components.pacing_checker import NarrationPacingChecker
+from .components.utils import sanitize_text
+
+from ai_services.ai_core_units.text_refiner.refiner import TextRefiner
+
 
 
 class NarrationGenerator(BaseRagGenerator):
     """
-    [V3 Final] 智能解说词生成服务。
-    Config-First 架构：asset_name 通过 Config 对象流转。
-    资源管理：基于生命周期分离 (Query vs Prompt vs Refine)。
-    能力增强：内置正则清洗，防止舞台指示泄露。
+    [Service Layer] Narration Generator V5 (Type Safe).
     """
-    SERVICE_NAME = "narration_generator"
-    MAX_REFINE_RETRIES = 2
 
     def __init__(self,
                  project_id: str,
@@ -51,506 +49,203 @@ class NarrationGenerator(BaseRagGenerator):
             work_dir=work_dir
         )
 
-        load_i18n_strings(rag_schema_path)
+        self.metadata_dir = metadata_dir
+        # 加载内部配置
+        self.prompt_definitions = self._load_internal_config("prompt_definitions.json")
+        self.query_templates = self._load_internal_config("query_templates.json")
 
-        self.prompt_definitions = self._load_json_config("prompt_definitions.json")
-        self.query_templates = self._load_json_config("query_templates.json")
-
-        self.logger.info("NarrationGeneratorV3 initialized.")
-
-    def _load_json_config(self, filename: str) -> Dict:
+    def _load_internal_config(self, filename: str) -> Dict:
         path = self.metadata_dir / filename
         if path.is_file():
-            with path.open("r", encoding="utf-8") as f:
-                return json.load(f)
+            with path.open(encoding="utf-8") as f: return json.load(f)
         return {}
 
-    def _sanitize_text(self, text: str) -> str:
-        """
-        [核心防御] 清洗文本，移除舞台指示和音效标记。
-        目标：剔除 （音乐起）、(Laughs) 等括号内容。
-        """
-        if not text:
-            return ""
-        # 匹配中文括号 （...） 或 英文括号 (...)
-        cleaned = re.sub(r'（.*?）|\(.*?\)', '', text)
-        return cleaned.strip()
-
-    def execute(self,
-                asset_name: str,
-                corpus_display_name: str,
-                blueprint_path: Path,
-                config: Dict[str, Any],
-                asset_id: str) -> Dict[str, Any]:
-
-        # 1. Pre-load blueprint for Top-K optimization
-        if not blueprint_path.is_file():
-            raise FileNotFoundError(f"Blueprint not found at: {blueprint_path}")
-
-        try:
-            with blueprint_path.open('r', encoding='utf-8') as f:
-                bp_data = json.load(f)
-            scenes = bp_data.get("scenes", {})
-            total_scene_count = len(scenes)
-            self.logger.info(f"Blueprint loaded. Total scenes found: {total_scene_count}")
-        except Exception as e:
-            self.logger.warning(f"Failed to pre-load blueprint: {e}. Using default.")
-            total_scene_count = 9999
-
-        # 2. Dynamic Top-K Adjustment
-        requested_top_k = config.get('rag_top_k', 50)
-        final_top_k = min(requested_top_k, total_scene_count)
-
-        if final_top_k != requested_top_k:
-            self.logger.info(f"Adjusting RAG Top-K: {requested_top_k} -> {final_top_k}")
-
-        config_optimized = config.copy()
-        config_optimized['rag_top_k'] = final_top_k
-        config_optimized['asset_name'] = asset_name
-
-        # 3. Invoke Base
-        return super().execute(
-            asset_name=asset_name,
-            corpus_display_name=corpus_display_name,
-            config=config_optimized,
-            blueprint_path=blueprint_path,
-            asset_id=asset_id
-        )
-
-    # --- Hooks Implementation ---
+    # --- 核心 Hook 实现 ---
 
     def _validate_config(self, config: Dict[str, Any]) -> NarrationServiceConfig:
+        """Step 1: 将输入 Dict 转化为强类型 Config 对象"""
         try:
+            # NarrativeDataset 实例化检查
+            if "narrative_dataset" in config and isinstance(config["narrative_dataset"], dict):
+                config["narrative_dataset"] = NarrativeDataset(**config["narrative_dataset"])
+
             return NarrationServiceConfig(**config)
         except ValidationError as e:
             self.logger.error(f"Config Validation Failed: {e}")
-            raise ValueError(f"Invalid service parameters: {e}")
+            raise ValueError(f"Invalid service configuration: {e}")
 
     def _build_query(self, config: NarrationServiceConfig) -> str:
-        asset_name = config.asset_name or "Unknown Asset"
+        """Step 2: 构建 RAG 查询"""
         qb = NarrationQueryBuilder(self.metadata_dir, self.logger)
-        return qb.build(asset_name, config.dict())
+        # [Refactor] 传入 Config 对象，不再 dump
+        return qb.build(config)  # asset_name 已包含在 config 中
 
     def _prepare_context(self, raw_chunks: List[Any], config: NarrationServiceConfig, **kwargs) -> str:
-        blueprint_path = kwargs.get('blueprint_path')
-        asset_id = kwargs.get('asset_id')
-        enhancer = ContextEnhancer(blueprint_path, self.logger)
-        return enhancer.enhance(raw_chunks, config.dict(), asset_id=asset_id)
+        """Step 4: 增强上下文"""
+        if not config.narrative_dataset:
+            raise ValueError("Fatal: NarrativeDataset is missing in config!")
+
+        # [Fix] 传入 prompt_definitions 以支持 i18n 模版
+        enhancer = ContextEnhancer(
+            dataset=config.narrative_dataset,
+            prompt_definitions=self.prompt_definitions,  # 新增传参
+            logger=self.logger
+        )
+        return enhancer.enhance(raw_chunks, config)
 
     def _construct_prompt(self, context: str, config: NarrationServiceConfig) -> str:
         """Step 5: 组装 Prompt"""
-        asset_name = config.asset_name or "Unknown Asset"
-        lang = config.lang
-        control = config.control_params
-
-        # 加载语言包
-        prompt_def = self.prompt_definitions.get(lang, self.prompt_definitions.get("en", {}))
-        query_def = self.query_templates.get(lang, self.query_templates.get("en", {}))
-
-        # 1. Perspective
-        perspective_key = control.perspective
-        perspectives = prompt_def.get("perspectives", {})
-        perspective_text = perspectives.get(perspective_key, perspectives.get("third_person", ""))
-
-        if perspective_key == "first_person":
-            perspective_text = perspective_text.replace("{character}", control.perspective_character or "主角")
-
-        # 2. Style (支持 Custom)
-        style_key = control.style
-
-        # [核心修改] 判断 Custom Style
-        if style_key == "custom":
-            # 这里的 control 是 Pydantic 对象，访问 custom_prompts 属性
-            if control.custom_prompts and control.custom_prompts.style:
-                style_text = control.custom_prompts.style
-                self.logger.info(f"Using CUSTOM Style: {style_text[:30]}...")
-            else:
-                # 理论上 Validator 已拦截，但做个兜底
-                style_text = "客观陈述"
-        else:
-            styles = prompt_def.get("styles", {})
-            style_text = styles.get(style_key, styles.get("objective", ""))
-
-        # 3. Focus
-        focus_key = control.narrative_focus
-
-        # [核心修改] 判断 Custom Focus (用于 Display/Prompt 描述，非检索)
-        if focus_key == "custom":
-            if control.custom_prompts and control.custom_prompts.narrative_focus:
-                # 注意：RAG Query 已经用了这个，这里是为了填入 Prompt 里的 {narrative_focus} 槽位
-                # 告诉 LLM “我要讲什么故事”
-                narrative_focus_text = control.custom_prompts.narrative_focus
-                # 替换可能存在的占位符
-                narrative_focus_text = narrative_focus_text.replace("{asset_name}", asset_name)
-            else:
-                narrative_focus_text = f"关于 {asset_name} 的故事"
-        else:
-            focus_templates = query_def.get("focus", {})
-            focus_desc = focus_templates.get(focus_key, focus_templates.get("general", ""))
-            narrative_focus_text = focus_desc.replace("{asset_name}", asset_name)
-
-        # 4. Constraints
-        if control.target_duration_minutes:
-            constraints = prompt_def.get("constraints", {})
-            duration_tpl = constraints.get("duration_guideline", "")
-            if duration_tpl:
-                duration_text = duration_tpl.format(minutes=control.target_duration_minutes)
-
-                target_chars = int(control.target_duration_minutes * 60 * config.speaking_rate)
-                char_tpl = constraints.get("char_limit_instruction", "")
-                char_constraint = char_tpl.format(target_chars=target_chars)
-
-                narrative_focus_text += "\n" + duration_text + char_constraint
-
-        # 5. Template
-        base_template = self._load_prompt_template(lang, "narration_generator")
-        return base_template.format(
-            perspective=perspective_text,
-            style=style_text,
-            narrative_focus=narrative_focus_text,
-            rag_context=context
-        )
+        return self._assemble_prompt_string(context, config)
 
     def _post_process(self, llm_response: Dict, config: NarrationServiceConfig, usage: Dict, **kwargs) -> Dict:
-        """Step 7: 后处理 (翻译 -> 清洗 -> 校验 -> 缩写 -> 导演 -> 封装)"""
+        """Step 7: 后处理"""
+        dataset = config.narrative_dataset
+        lang = config.lang
+
+        # 1. 初始化 PacingChecker (传入 Dataset 对象)
+        pacing_checker = NarrationPacingChecker(dataset, config, self.logger)
+
+        # 2. 初始化 TextRefiner (通用单元)
+        refiner = TextRefiner(self.gemini_processor)
+
+        # 3. 准备提示词模版
+        refine_prompt_template = refiner.load_template("narration_refine",lang)
+        style_desc = self._resolve_prompt_content(lang, "styles", config.control_params.style,
+                                                  config.control_params.custom_prompts)
+
         initial_script = llm_response.get("narration_script", [])
-        blueprint_path = kwargs.get('blueprint_path')
-        asset_name = config.asset_name or "Unknown Asset"
-        rag_context = kwargs.get('rag_context', '')
-        # [核心修复] 在这里初始化默认值！
-        # 默认为源语言 (zh)，如果后续触发了翻译，再更新为目标语言
-        processing_lang = config.lang
-
-        # ==========================================
-        # 1. [新增] 翻译环节 (Translate Layer)
-        # ==========================================
-        # 逻辑：如果有 target_lang 且与源语言不同，则触发
-        if config.target_lang and config.target_lang != config.lang:
-            self.logger.info(f"Starting Context-Aware Translation: {config.lang} -> {config.target_lang}")
-            initial_script = self._translate_script(
-                initial_script, config.lang, config.target_lang, rag_context, config.model
-            )
-            processing_lang = config.target_lang
-
-        # ==========================================
-        # 2. 预清洗 (Sanitize)
-        # ==========================================
-        # 此时 script 已经是目标语言了
-        for item in initial_script:
-            if "narration" in item:
-                item["narration"] = self._sanitize_text(item["narration"])
-
-        # ==========================================
-        # 3. 校验与缩写 (Validation & Refine Loop)
-        # ==========================================
-        with blueprint_path.open('r', encoding='utf-8') as f:
-            blueprint_data = json.load(f)
-
-        validation_lang = config.target_lang if (
-                    config.target_lang and config.target_lang != config.lang) else config.lang
-
-        validator = NarrationValidator(blueprint_data, config.dict(), self.logger, lang=validation_lang)
-        #validator = NarrationValidator(blueprint_data, config.dict(), self.logger)
-        # 注意：这里会对“翻译后”的文本进行语速和时长校验，这是完全正确的逻辑
-        final_script_list = self._validate_and_refine(initial_script, validator, config, processing_lang)
-
-        # ==========================================
-        # 4. 配音导演 (Audio Directing)
-        # ==========================================
-        if final_script_list:
-            self.logger.info("Starting Stage 5: Audio Directing...")
-            final_script_list = self._enrich_audio_directives(final_script_list, config, processing_lang)
-
-        # ==========================================
-        # 5. 封装结果
-        # ==========================================
-        # 获取上下文 (由基类传入)
-        rag_context = kwargs.get('rag_context', '')
-
-        try:
-            result = NarrationResult(
-                generation_date=datetime.now().isoformat(),
-                asset_name=asset_name,
-                source_corpus=kwargs.get('corpus_display_name', 'unknown'),
-                rag_context_snapshot=rag_context,
-                narration_script=final_script_list,
-                ai_total_usage=usage
-            )
-            return result.dict()
-        except ValidationError as e:
-            self.logger.error(f"Output Validation Failed: {e}")
-            raise RuntimeError(f"Generated result failed schema validation: {e}")
-
-    def _translate_script(self, script: List[Dict], src_lang: str, tgt_lang: str, context: str, model: str) -> List[
-        Dict]:
-        """
-        [Stage 3.5] 上下文感知翻译器。
-        """
-        if not script: return []
-
-        simplified_input = [
-            {"index": i, "narration": item["narration"]}
-            for i, item in enumerate(script)
-        ]
-
-        # [修复 1] 优先使用目标语言的 Prompt 模版
-        # 如果目标是英文，用英文指令；如果目标是中文，用中文指令
-        # 这样能更好地激发模型的对应语言能力
-        prompt_lang = tgt_lang if tgt_lang in ["zh", "en", "fr"] else "en"
-        self.logger.info(f"Loading translation prompt for target language: {prompt_lang}")
-
-        translator_template = self._load_prompt_template(prompt_lang, "narration_translator")
-
-        prompt = translator_template.format(
-            src_lang=src_lang,
-            tgt_lang=tgt_lang,
-            rag_context=context,
-            script_json=json.dumps(simplified_input, ensure_ascii=False, indent=2)
-        )
-
-        try:
-            self.logger.info("Invoking LLM for Context-Aware Translation...")
-            response_data, _ = self.gemini_processor.generate_content(
-                model_name=model,
-                prompt=prompt,
-                temperature=0.3
-            )
-
-            translated_data = response_data.get("translated_script", [])
-
-            # [修复 2] 增强索引匹配的鲁棒性
-            trans_map = {}
-            for item in translated_data:
-                try:
-                    # 强制转为 int，防止 LLM 返回字符串类型的 "0"
-                    idx = int(item.get("index", -1))
-                    if idx >= 0:
-                        trans_map[idx] = item["narration"]
-                except (ValueError, TypeError):
-                    continue
-
-            self.logger.info(f"LLM returned {len(translated_data)} items. Matched {len(trans_map)} indices.")
-
-            match_count = 0
-            for i, item in enumerate(script):
-                if i in trans_map:
-                    # 备份源文本
-                    item["narration_source"] = item["narration"]
-                    # 更新为主文本
-                    item["narration"] = trans_map[i]
-
-                    # 清理旧的 metadata
-                    if "metadata" in item:
-                        item["metadata"].pop("refined", None)
-                        item["metadata"].pop("overflow_sec", None)
-
-                    match_count += 1
-
-            if match_count == 0:
-                self.logger.warning("Translation Warning: No scripts were updated. Check index matching.")
-            else:
-                self.logger.info(f"Successfully applied translation to {match_count} clips.")
-
-        except Exception as e:
-            self.logger.error(f"Translation failed: {e}. Falling back to source language.")
-
-        return script
-
-    def _validate_and_refine(self, script: List[Dict], validator: NarrationValidator,
-                             config: NarrationServiceConfig, lang: str) -> List[Dict]:
-        self.logger.info(f"Starting Stage 4: Validation & Refinement...")
         final_script = []
-        #lang = config.lang
-        style_key = config.control_params.style
 
-        # [核心修改] 获取 Refine 用的 Style 描述
-        if style_key == "custom":
-            if config.control_params.custom_prompts:
-                style_text = config.control_params.custom_prompts.style
-            else:
-                style_text = "客观"
-        else:
-            prompt_def = self.prompt_definitions.get(lang, self.prompt_definitions.get("en", {}))
-            style_text = prompt_def.get("styles", {}).get(style_key, "")
+        # 4. 循环处理
+        for index, snippet in enumerate(initial_script):
+            # Sanitize first
+            if "narration" in snippet:
+                snippet["narration"] = sanitize_text(snippet["narration"])
 
-        refine_template = self._load_prompt_template(lang, "narration_refine")
+            # A. 检查步调 (Check Pacing)
+            is_ok, info = pacing_checker.check_pacing(snippet)
 
-        for index, snippet in enumerate(script):
-            is_valid, info = validator.validate_snippet(snippet)
-            if is_valid:
+            # 如果 OK 或者 视觉时长异常(0.0)，则直接通过
+            if is_ok or info['real_visual_duration'] <= 0.1:
                 snippet["metadata"] = info
                 final_script.append(snippet)
                 continue
 
-            self.logger.warning(f"Snippet {index} failed validation. Attempting refinement...")
-            current_text = snippet.get("narration", "")
-            max_allowed_chars = int(info["real_visual_duration"] * validator.speaking_rate)
-            is_valid_now = False
+            # B. 溢出处理 (Refine Loop)
+            self.logger.warning(f"Snippet {index} overflow ({info['overflow_sec']}s). Calling TextRefiner...")
 
-            for attempt in range(self.MAX_REFINE_RETRIES):
-                try:
-                    refine_prompt = refine_template.format(
-                        style=style_text,
-                        original_text=current_text,
-                        max_seconds=info["real_visual_duration"],
-                        max_chars=max_allowed_chars
-                    )
-                    refine_response, _ = self.gemini_processor.generate_content(
-                        model_name=config.model,
-                        prompt=refine_prompt,
-                        temperature=0.3
-                    )
-                    new_text = refine_response.get("refined_text", "")
-                    if not new_text: continue
+            # 计算 Refiner 需要的参数
+            safe_max_chars = max(10, int(info["real_visual_duration"] * pacing_checker.speaking_rate))
 
-                    # [核心防御] 2. 清洗缩写后的文本：防止 Refine 过程中引入新的舞台指示
-                    new_text = self._sanitize_text(new_text)
-
-                    snippet["narration"] = new_text
-                    is_valid_now, new_info = validator.validate_snippet(snippet)
-                    if is_valid_now:
-                        snippet["metadata"] = new_info
-                        snippet["metadata"]["refined"] = True
-                        final_script.append(snippet)
-                        break
-                    else:
-                        current_text = new_text
-                        info = new_info
-                except Exception:
-                    pass
-
-            if not is_valid_now:
-                snippet["metadata"] = info
-                snippet["metadata"]["validation_error"] = "Duration Overflow"
-                if current_text != snippet.get("narration"):
-                    snippet["narration"] = current_text
-                final_script.append(snippet)
-
-        return final_script
-
-    def _enrich_audio_directives(self, script: List[Dict], config: NarrationServiceConfig, lang: str) -> List[Dict]:
-        """
-        [Stage 6] 配音导演模式。
-        批量将定稿的 script 发送给 LLM，请求生成 tts_instruct 和 narration_for_audio。
-        """
-        #lang = config.lang
-        # 准备发给 LLM 的简化版 JSON (只包含文本，节省 Token)
-        simplified_input = [
-            {"index": i, "narration": item["narration"]}
-            for i, item in enumerate(script)
-        ]
-
-        # 获取 Style 描述
-        if config.control_params.style == "custom" and config.control_params.custom_prompts:
-            style_text = config.control_params.custom_prompts.style
-        else:
-            prompt_def = self.prompt_definitions.get(lang, self.prompt_definitions.get("en", {}))
-            style_text = prompt_def.get("styles", {}).get(config.control_params.style, "")
-
-        # 获取 Perspective 描述
-        prompt_def = self.prompt_definitions.get(lang, self.prompt_definitions.get("en", {}))
-        perspective_text = prompt_def.get("perspectives", {}).get(config.control_params.perspective, "")
-
-        # 加载模版 (请确保 narration_audio_director_zh.txt 已创建)
-        director_template = self._load_prompt_template(lang, "narration_audio_director")
-
-        prompt = director_template.format(
-            style=style_text,
-            perspective=perspective_text,
-            script_json=json.dumps(simplified_input, ensure_ascii=False, indent=2)
-        )
-
-        try:
-            # 调用 LLM (Batch 处理所有片段)
-            self.logger.info("Invoking Audio Director for TTS instructions...")
-            response_data, _ = self.gemini_processor.generate_content(
+            refined_text = refiner.refine_content(
+                content=snippet["narration"],
+                prompt_template=refine_prompt_template,
                 model_name=config.model,
-                prompt=prompt,
-                temperature=0.7  # 导演需要一点创造力
+                # kwargs for template
+                style=style_desc,
+                max_seconds=info["real_visual_duration"],
+                max_chars=safe_max_chars
             )
 
-            enriched_data = response_data.get("enriched_script", [])
+            if refined_text:
+                snippet["narration"] = refined_text
+                # 复检
+                is_ok_now, new_info = pacing_checker.check_pacing(snippet)
+                snippet["metadata"] = new_info
+                snippet["metadata"]["refined"] = True
+                if not is_ok_now:
+                    snippet["metadata"]["validation_error"] = "Still Overflow after Refine"
+            else:
+                # Refine 失败，保留原样并标记
+                snippet["metadata"] = info
+                snippet["metadata"]["validation_error"] = "Refine Failed"
 
-            # 将结果回填到原 script 列表
-            # 使用 index 匹配，防止顺序错乱
-            enrich_map = {item["index"]: item for item in enriched_data}
+            final_script.append(snippet)
 
-            for i, item in enumerate(script):
-                directive = enrich_map.get(i)
-                if directive:
-                    item["tts_instruct"] = directive.get("tts_instruct")
-                    item["narration_for_audio"] = directive.get("narration_for_audio")
-                else:
-                    # 兜底：如果没有生成指令，就用默认值
-                    item["tts_instruct"] = "Speak naturally."
-                    # 如果没有 narration_for_audio，下游 DubbingEngine 会自动回退到 narration，这里可以不填
-                    # item["narration_for_audio"] = item["narration"]
+        # 5. Result Packaging
+        script_objects = [NarrationSnippet(**item) for item in final_script]
 
-            self.logger.info(f"Successfully enriched {len(enriched_data)} clips with audio directives.")
+        result = NarrationResult(
+            generation_date=datetime.now().isoformat(),
+            asset_name=config.asset_name,
+            source_corpus=kwargs.get('corpus_display_name', 'mock-corpus'),
+            rag_context_snapshot=kwargs.get('rag_context', ''),
+            narration_script=script_objects,
+            ai_total_usage=usage
+        )
+        return result.model_dump()
 
-        except Exception as e:
-            self.logger.error(f"Audio Director failed: {e}. Falling back to raw narration.")
-            # 降级策略：如果导演环节挂了，不要让整个任务失败，保留原文本即可
-            pass
+    # --- 辅助方法 ---
 
-        return script
+    def _assemble_prompt_string(self, context: str, config: NarrationServiceConfig) -> str:
+        """Prompt 组装 (Type Safe)"""
+        lang = config.lang
+        control = config.control_params
+        custom = control.custom_prompts
 
-    def execute_localization(self,
-                             master_script_data: Dict[str, Any],
-                             config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        [独立入口] 执行本地化任务：读取母本 -> 翻译 -> 校验/缩写 -> 导演
-        """
-        self.logger.info(f"Starting Localization Task for: {master_script_data.get('asset_name')}")
+        asset_name = config.asset_name
+        if config.narrative_dataset and config.narrative_dataset.project_metadata:
+            asset_name = config.narrative_dataset.project_metadata.asset_name
 
-        # 1. 校验配置
-        # 注意：这里不需要 blueprint_path，因为我们只做纯文本处理
-        # 但我们需要 speaking_rate 等参数，所以依然用 NarrationServiceConfig 校验
-        try:
-            service_config = NarrationServiceConfig(**config)
-        except ValidationError as e:
-            raise ValueError(f"Invalid service parameters: {e}")
+        render_ctx = {
+            "character": control.perspective_character or "主角",
+            "asset_name": asset_name,
+            "minutes": control.target_duration_minutes or 3.0,
+            "target_chars": int((control.target_duration_minutes or 3.0) * 60 * config.speaking_rate)
+        }
 
-        # 2. 提取上下文
-        # 关键：从母本结果中恢复 RAG Context，无需重新检索！
-        rag_context = master_script_data.get("rag_context_snapshot", "")
-        if not rag_context:
-            self.logger.warning("Master script missing 'rag_context_snapshot'. Translation accuracy may drop.")
+        perspective = self._resolve_prompt_content(lang, "perspectives", control.perspective, custom).format(
+            **render_ctx)
+        style = self._resolve_prompt_content(lang, "styles", control.style, custom).format(**render_ctx)
+        focus = self._resolve_prompt_content(lang, "focus", control.narrative_focus, custom).format(**render_ctx)
 
-        # 3. 提取脚本
-        # 注意：母本里的 narration_script 是一个 List[Dict]，需要适配
-        # Pydantic model dump 出来的可能是 dict，也可能是 list of objects
-        input_script = master_script_data.get("narration_script", [])
+        constraints = ""
+        lang_defs = self.prompt_definitions.get(lang, {})
+        if control.target_duration_minutes:
+            c_def = lang_defs.get("constraints", {})
+            constraints = f"\n{c_def.get('duration_guideline', '')}{c_def.get('char_limit_instruction', '')}".format(
+                **render_ctx)
 
-        # 4. 复用 _post_process 的逻辑链
-        # 我们构造一个伪造的 llm_response，骗过 _post_process
-        # 或者更干净的做法：把 _post_process 里的逻辑拆出来。
-        # 为了代码复用最大化，我们直接复用 _post_process，因为它正好就是干这个的。
-
-        # 唯一的特殊点：_post_process 需要 blueprint_path 来做 Validator
-        # 这里我们面临一个抉择：
-        # A. 本地化任务也必须传 blueprint (为了获取 accurately visual duration) -> **推荐，最精准**
-        # B. 本地化任务直接信赖母本里的 duration (如果母本已经对齐了) -> 不行，因为翻译后时长变了，必须重新校验
-
-        # 结论：本地化任务也需要 blueprint_path 来计算物理时长限制
-
-        blueprint_path = Path(config.get("blueprint_path", ""))  # 假设调用方会传
-        if not blueprint_path.is_file():
-            raise ValueError("Localization requires 'blueprint_path' to validate timing.")
-
-        # 调用核心流水线
-        # 此时 config.lang 是源语言，config.target_lang 是目标语言
-        # usage 传一个空的，慢慢累加
-        usage = {"cost_usd": 0.0, "total_tokens": 0}
-
-        final_result = self._post_process(
-            llm_response={"narration_script": input_script},
-            config=service_config,
-            usage=usage,
-            corpus_display_name=master_script_data.get("source_corpus", "unknown"),
-            rag_context=rag_context,
-            blueprint_path=blueprint_path,  # 传入路径
-            asset_name=master_script_data.get("asset_name")
+        base_template = self._load_prompt_template(lang, "narration_generator")
+        return base_template.format(
+            perspective=perspective, style=style, narrative_focus=focus + constraints, rag_context=context
         )
 
-        return final_result
+    def _resolve_prompt_content(self, lang: str, category: str, key: str, custom_obj: Any = None) -> str:
+        """
+        解析 Prompt 内容 (Strict Mode / Strategy A)
+
+        逻辑:
+        1. 检查 Custom。
+        2. 检查 Preset。
+        3. [Strict] 如果都找不到，直接抛出异常，拒绝执行。
+        """
+        # 1. Custom 优先 (Safe Check)
+        if custom_obj:
+            if category == "styles" and getattr(custom_obj, 'style', None): return custom_obj.style
+            if category == "focus" and getattr(custom_obj, 'narrative_focus', None): return custom_obj.narrative_focus
+
+        # 2. 加载语言包
+        lang_defs = self.prompt_definitions.get(lang, {})
+        # [Strict Option] 如果连语言都不支持，是否要报错？
+        # 考虑到 i18n 配置可能滞后，这里通常保留 fallback 到 'zh' 的容错，
+        # 但既然你要求严格，如果完全找不到该语言定义，也可以视为一种配置错误。
+        # 这里我保留了对“语言”的最低限度容错（防止服务崩溃），但对“业务 Key”进行强校验。
+        if not lang_defs:
+            self.logger.warning(f"Language '{lang}' not found, falling back to 'zh'.")
+            lang_defs = self.prompt_definitions.get("zh", {})
+
+        cat_defs = lang_defs.get(category, {})
+        content = cat_defs.get(key, "")
+
+        # 3. [Strategy A] 严格校验 (Strict Validation)
+        # 如果既不是 Custom，又在 Preset 里找不到对应的 Prompt 内容，直接报错。
+        if not content:
+            error_msg = (
+                f"Strict Protocol Violation: Invalid parameter for [{category}]. "
+                f"Value '{key}' is not defined in system presets, and no custom prompt provided."
+            )
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        return content
