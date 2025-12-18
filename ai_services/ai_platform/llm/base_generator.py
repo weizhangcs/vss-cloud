@@ -40,7 +40,6 @@ class BaseRagGenerator(AIServiceMixin, ABC):
             self.logger.error(f"Vertex AI initialization failed: {e}")
             raise
 
-    # ... (_get_rag_corpus, _retrieve_from_rag 保持不变) ...
     def _get_rag_corpus(self, corpus_display_name: str) -> Any:
         try:
             corpora = rag.list_corpora()

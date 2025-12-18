@@ -1,181 +1,133 @@
-# 文件路径: ai_services/rag/schemas.py
-# 描述: [重构后] 定义了RAG部署流程中使用到的核心数据结构（数据契约）。
-#      已与Django框架解耦，i18n翻译文件路径由外部动态加载。
-# 版本: 2.0 (Decoupled & Reviewed)
+# ai_services/ai_platform/rag/schemas.py
 
 import json
 from collections import defaultdict
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import Dict, List, Optional
 from pathlib import Path
+from pydantic import BaseModel, Field
 
-# 定义一个全局变量，用于缓存加载后的i18n翻译字符串。
-# 这样做可以避免在每次调用get_labels时都重复读取文件。
-I18N_STRINGS: Dict = {}
+from ai_services.biz_services.narrative_dataset import NarrativeScene
 
-def load_i18n_strings(i18n_path: Path):
-    """
-    从指定路径加载i18n翻译文件到全局缓存。
-
-    这个函数应该在应用启动时或在Celery任务开始时被调用一次，
-    以确保 Pydantic 模型在解析和生成文本时能够访问到翻译内容。
-
-    Args:
-        i18n_path (Path): 指向 i18n JSON 文件的完整 Path 对象。
-    """
-    global I18N_STRINGS
-    # 只有在缓存为空时才执行文件读取，避免重复加载。
-    if not I18N_STRINGS:
-        try:
-            with i18n_path.open("r", encoding="utf-8") as f:
-                I18N_STRINGS = json.load(f)
-        except FileNotFoundError:
-            # 如果文件未找到，打印警告并设置为空字典，以防程序崩溃。
-            print(f"警告: 未找到 i18n 翻译文件于路径: {i18n_path}。")
-            I18N_STRINGS = {}
-        except json.JSONDecodeError:
-            print(f"警告: 解析 i18n 翻译文件失败于路径: {i18n_path}。")
-            I18N_STRINGS = {}
-
-def get_labels(lang: str = 'en') -> dict:
-    """
-    根据语言代码，从全局缓存中获取对应的翻译标签字典。
-
-    Args:
-        lang (str): 目标语言代码 (e.g., 'zh', 'en')。
-
-    Returns:
-        dict: 包含该语言所有翻译标签的字典。如果找不到，则回退到英文。
-    """
-    # 提供一个回退机制，如果指定语言不存在，则尝试使用英文。
-    return I18N_STRINGS.get(lang, I18N_STRINGS.get('en', {}))
-
-
-# --- Pydantic 模型定义 ---
-# 以下所有数据模型的定义保持不变，因为它们的结构和逻辑是正确的。
-# 它们现在依赖于通过 load_i18n_strings 函数填充的全局 I18N_STRINGS 变量。
-
-class Dialogue(BaseModel):
-    """定义了单条对话的结构"""
-    content: str
-    speaker: str
-    start_time: str
-    end_time: str
-
-
-class Highlight(BaseModel):
-    """定义了高光标注的结构"""
-    type: str = Field(..., alias='type_')
-    description: str
-    start_time: str
-    end_time: str
-
-    class Config:
-        populate_by_name = True
-
+# --- 1. RAG 专用数据结构 ---
 
 class IdentifiedFact(BaseModel):
-    """定义了单条被识别出的事实的结构，与CharacterIdentifier的输出匹配"""
-    character_name: Optional[str] = Field(None, exclude=True)
+    """
+    定义 RAG 接收的事实结构。
+    必须与 CharacterIdentifier 的输出兼容，但在这里我们可能需要更宽松的校验
+    或者对数据进行清洗。
+    """
+    character_name: Optional[str] = Field(None, description="事实归属的角色")
     scene_id: int
     attribute: str
     value: str
-    source_text: str
-    type: str
-    suggested_attribute: Optional[str] = None
+    source_text: Optional[str] = None
+    type: str = "general"
+
+    # 允许额外字段
+    class Config:
+        extra = "ignore"
+
+        # 确保 value 是字符串 (防御性编程)
+
+    def __init__(self, **data):
+        if 'value' in data:
+            data['value'] = str(data['value'])
+        super().__init__(**data)
+
+class CharacterFactsFile(BaseModel):
+    generation_date: Optional[str] = None
+    source_file: Optional[str] = None
+    identified_facts_by_character: Dict[str, List[Dict]] = Field(default_factory=dict)
 
 
-class Scene(BaseModel):
-    """定义了单个场景的完整结构，这是我们的核心“工具箱”单元"""
-    id: int
-    name: str
-    chapter_id: int
-    dialogues: List[Dialogue] = Field(default_factory=list)
-    highlights: List[Highlight] = Field(default_factory=list)
-    inferred_location: Optional[str] = None
-    character_dynamics: Optional[str] = None
-    mood_and_atmosphere: Optional[str] = None
-    enhanced_facts: List[IdentifiedFact] = Field(default_factory=list, exclude=True)
+# --- 3. [核心新增] 任务输入契约 (Task Payload Schema) ---
 
-    def to_rag_text(self, asset_id: str, lang: str = 'en') -> str:
+class RagTaskPayload(BaseModel):
+    """
+    RAG 部署任务的完整 Payload 契约
+    对应 task.payload 字段
+    """
+    # 必需: 剧本蓝图路径 (V6 Dataset)
+    absolute_blueprint_input_path: str = Field(..., description="V6 NarrativeDataset 输入文件的绝对路径")
+
+    # 必需: 事实文件路径 (Character Identifier Output)
+    absolute_facts_input_path: str = Field(..., description="人物事实文件的绝对路径")
+
+    # 可选: 明确指定 Asset ID (如果 dataset 中有，则以 dataset 为准，这里作为覆盖或备用)
+    asset_id: Optional[str] = Field(None, description="媒资 ID")
+
+    # 兼容性字段 (处理旧代码可能的传参)
+    absolute_input_file_path: Optional[str] = Field(None, description="兼容旧版本的蓝图路径 key")
+
+    lang: str = Field(default="zh", description="生成文档的目标语言 (zh/en)")
+
+# --- 4. 内容格式化器 (Adapter) ---
+
+class RagContentFormatter:
+    """
+    负责将 NarrativeScene (V6) 和 IdentifiedFacts 转换为 RAG 友好的富文本。
+    """
+
+    @staticmethod
+    def format_scene(scene: NarrativeScene,
+                     facts: List[IdentifiedFact],
+                     asset_id: str,
+                     labels: Dict[str, str]) -> str:
+
         """
-        [修正后] 生成RAG引擎所需的、“事实增强版”的富文本文档。
-        采用更安全的 f-string 写法以兼容 Python 3.11。
+        生成单场景的 RAG 文档内容。
         """
-        labels = get_labels(lang)
-        # --- 1. 构建元数据块 ---
+
+        # --- A. 元数据块 (Metadata Block) ---
         metadata_lines = [
-            labels.get("metadata_block_header", "--- Metadata Block ---"),
-            f"{labels.get('asset_id_label', 'Asset ID')}: {asset_id}",
-            f"{labels.get('scene_id_label', 'Scene ID')}: {self.id}",
-            f"{labels.get('location_label', 'Location')}: {self.inferred_location or 'N/A'}",
-            f"{labels.get('mood_label', 'Mood')}: {self.mood_and_atmosphere or 'N/A'}",
+            labels.get("metadata_block_header", "--- 元数据块 ---"),
+            f"{labels.get('asset_id_label', '媒资ID')}: {asset_id}",
+            f"{labels.get('scene_id_label', '场景ID')}: {scene.local_id}",  # V6 使用 local_id
+            f"{labels.get('location_label', '地点')}: {scene.inferred_location or 'N/A'}",
+            f"{labels.get('mood_label', '氛围')}: {scene.mood_and_atmosphere or 'N/A'}",
         ]
-        present_characters = list(set(d.speaker for d in self.dialogues))
-        if present_characters:
-            characters_label = labels.get('characters_label', 'Present Characters')
-            metadata_lines.append(f"{characters_label}: {', '.join(present_characters)}")
 
-        summary_label = labels.get('narrative_summary_label', 'The core narrative of this scene is')
-        summary = self.character_dynamics or '未描述'
+        # 提取出场角色
+        present_characters = list(set(d.speaker for d in scene.dialogues if d.speaker))
+        if present_characters:
+            char_label = labels.get('characters_label', '出场角色')
+            metadata_lines.append(f"{char_label}: {', '.join(present_characters)}")
+
+        # 核心叙事 (Character Dynamics 通常承载了动作描述)
+        summary_label = labels.get('narrative_summary_label', '本场景的核心叙事是')
+        summary = scene.character_dynamics or '未描述'
         metadata_lines.append(f"{summary_label}: {summary}")
 
-        # --- 2. 构建推理事实块 ---
-        inference_lines = [labels.get("inference_header", "--- Inferred Facts ---")]
-        if self.enhanced_facts:
+        # --- B. 推理事实块 (Inferred Facts Block) ---
+        inference_lines = [labels.get("inference_header", "---推理事实---")]
+        if facts:
             facts_by_char = defaultdict(list)
-            for fact in self.enhanced_facts:
+            for fact in facts:
                 if fact.character_name:
-                    # 将 f-string 格式化移到 append 调用之外，保持简洁
-                    fact_text = f"{fact.attribute}是“{fact.value}”"
-                    facts_by_char[fact.character_name].append(fact_text)
+                    # e.g. "职业是植物学家"
+                    facts_by_char[fact.character_name].append(f"{fact.attribute}是“{fact.value}”")
 
             if facts_by_char:
-                # [核心修正] 将标签获取和字符串格式化分开，避免复杂的 f-string
-                prefix_label = labels.get('inference_summary_prefix', "'s inferred facts")
+                prefix_label = labels.get('inference_summary_prefix', "的推理事实")
                 for char_name, fact_list in facts_by_char.items():
+                    # e.g. "张强的推理事实: 职业是...，性格是...。"
                     facts_str = "，".join(fact_list) + "。"
-                    # 使用预先获取的标签来构建最终的字符串
-                    inference_line = f"{char_name}{prefix_label}: {facts_str}"
-                    inference_lines.append(inference_line)
+                    inference_lines.append(f"{char_name}{prefix_label}: {facts_str}")
 
-        # --- 3. 构建台词对话块 ---
-        dialogue_lines = [labels.get("dialogue_header", "--- Dialogues ---")]
-        for d in self.dialogues:
+        # --- C. 台词对话块 (Dialogues Block) ---
+        dialogue_lines = [labels.get("dialogue_header", "---台词对话 ---")]
+        for d in scene.dialogues:
             dialogue_lines.append(f"- {d.speaker}: {d.content}")
 
-        # --- 4. 拼接所有块 ---
+        # --- D. 拼装 ---
         final_blocks = [metadata_lines]
+
+        # 只有当有内容时才添加块，避免产生空标题
         if len(inference_lines) > 1:
             final_blocks.append(inference_lines)
+
+        # 对话通常都有，但也防御一下
         if len(dialogue_lines) > 1:
             final_blocks.append(dialogue_lines)
 
         return "\n".join(["\n".join(block) for block in final_blocks])
-
-
-class ProjectMetadata(BaseModel):
-    project_name: str
-
-
-class NarrativeBlueprint(BaseModel):
-    """定义了整个narrative_blueprint.json文件的顶层结构"""
-    project_metadata: ProjectMetadata
-    scenes: Dict[str, Scene]
-
-
-class Milestone(BaseModel):
-    milestone_description: str
-    related_scene_ids: List[int]
-
-
-class CharacterProfile(BaseModel):
-    character_name: str
-    metrics: Dict[str, Any]
-    reasoning_summary: Dict[str, str]
-    narrative_milestones: List[Milestone]
-
-
-class BrainIndex(BaseModel):
-    series_id: str
-    character_profiles: Dict[str, CharacterProfile]

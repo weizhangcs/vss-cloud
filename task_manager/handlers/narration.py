@@ -1,86 +1,109 @@
-import json  # [新增] 用于处理 JSON 读写
+import json
 import yaml
 from pathlib import Path
 from django.conf import settings
 from task_manager.models import Task
+
+# AI Infrastructure
 from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
 from ai_services.ai_platform.llm.cost_calculator import CostCalculator
+
+# Biz Services (New Architecture)
+from ai_services.biz_services.narrative_dataset import NarrativeDataset
 from ai_services.biz_services.narration.narration_generator import NarrationGenerator
+from ai_services.biz_services.narration.schemas import NarrationTaskPayload, NarrationServiceConfig
+
+# Base & Registry
 from .base import BaseTaskHandler
 from .registry import HandlerRegistry
-# [新增导入] 适配层和异常处理
+
+# Exceptions & Utils
 from core.exceptions import BizException
 from core.error_codes import ErrorCode
-from ai_services.utils.blueprint_converter import BlueprintConverter, Blueprint  # 假设路径
 
 
 @HandlerRegistry.register(Task.TaskType.GENERATE_NARRATION)
 class NarrationHandler(BaseTaskHandler):
+    """
+    [Orchestrator] Narration 任务处理器 (V5 Schema-Driven & Dataset-Native)
+
+    职责：
+    1. Input Validation: 校验路径合法性。
+    2. Data Loading: 加载并校验 NarrativeDataset (Strict Mode)。
+    3. Context Assembly: 组装 NarrationServiceConfig。
+    4. Execution: 驱动 Generator 执行。
+    """
+
     def handle(self, task: Task) -> dict:
         self.logger.info(f"Starting NARRATION GENERATION for Task ID: {task.id}...")
 
-        payload = task.payload
-        asset_name = payload.get("asset_name")
-        asset_id = payload.get("asset_id")
-        output_file_path_str = payload.get("absolute_output_path")
-        blueprint_path_str = payload.get("absolute_blueprint_path")  # 这是新版 Blueprint 路径
-
-        if not all([asset_name, asset_id, output_file_path_str, blueprint_path_str]):
-            raise ValueError("Payload missing required keys.")
-
-        new_blueprint_path = Path(blueprint_path_str)
-        if not new_blueprint_path.is_file():
-            raise FileNotFoundError(f"Blueprint file not found at: {new_blueprint_path}")
-
-        # --- [核心利旧适配层] 转换新的 Blueprint 格式为旧版 ---
-
-        # 1. 读取新 Blueprint JSON
-        with new_blueprint_path.open('r', encoding='utf-8') as f:
-            new_blueprint_json = json.load(f)
-
-        # 2. 校验并解析为新 Pydantic 对象
+        # --- [Step 1: 严谨的输入校验 (Input Schema)] ---
         try:
-            new_blueprint_obj = Blueprint.model_validate(new_blueprint_json)
+            payload_obj = NarrationTaskPayload(**task.payload)
         except Exception as e:
-            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"New blueprint file validation failed: {e}")
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"Invalid Task Payload: {e}")
 
-        # 3. 实例化并执行转换
-        converter = BlueprintConverter()
-        old_blueprint_dict = converter.convert(new_blueprint_obj)
+        # --- [Step 2: 数据基座加载 (Dataset Loading)] ---
+        # 直接加载 NarrativeDataset，废弃旧的 BlueprintConverter
+        try:
+            blueprint_path = Path(payload_obj.absolute_blueprint_path)
+            with blueprint_path.open(encoding='utf-8') as f:
+                raw_data = json.load(f)
 
-        # 4. 保存转换后的旧版 Blueprint 到临时文件
-        converted_filename = f"narrative_blueprint_OLD_CONVERTED_narration.json"
-        # 确保写入任务的临时目录
-        temp_dir = settings.SHARED_TMP_ROOT / f"narration_task_{task.id}_workspace"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        converted_path = temp_dir / converted_filename
+            # [Strict Mode Check]
+            # 强校验：输入文件必须完全符合 NarrativeDataset 标准
+            # 这一步会触发 Pydantic 校验，如果数据不合法（如缺字段），直接抛出异常
+            dataset_obj = NarrativeDataset(**raw_data)
+            self.logger.info(f"NarrativeDataset loaded successfully. Scenes: {len(dataset_obj.scenes)}")
 
-        with converted_path.open('w', encoding='utf-8') as f:
-            json.dump(old_blueprint_dict, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR,
+                               msg=f"Input file does not conform to NarrativeDataset standard: {e}")
 
-        # 5. 覆盖 Blueprint 路径：让下游服务使用转换后的文件
-        final_blueprint_path = converted_path
-        # ----------------------------------------------------------
-
-        # 1. 配置 (保持不变)
+        # --- [Step 3: 配置加载与合并] ---
+        # 3.1 加载系统默认配置
         config_path = settings.BASE_DIR / 'ai_services' / 'configs' / 'ai_inference_config.yaml'
         try:
             with config_path.open('r', encoding='utf-8') as f:
                 ai_config_full = yaml.safe_load(f)
-            default_config = ai_config_full.get('narration_generator', {})
+            system_defaults = ai_config_full.get('narration_generator', {})
         except Exception:
             self.logger.warning("Using default AI config.")
-            default_config = {}
+            system_defaults = {}
 
-        user_params = payload.get("service_params", {})
-        final_config = default_config.copy()
-        final_config.update(user_params)
-        if 'lang' not in final_config:
-            final_config['lang'] = 'zh'
+        # 3.2 准备用户覆盖参数
+        user_overrides = payload_obj.service_params
 
-        # 2. 实例化依赖 (保持不变)
+        # --- [Step 4: 构建 Context Carrier (核心上下文对象)] ---
+        try:
+            # 优先级: System Defaults < User Params < Runtime Constraints
+            merged_config_dict = system_defaults.copy()
+            merged_config_dict.update(user_overrides)
+
+            # 注入运行时数据
+            # [Core Fix] 使用 narrative_dataset 替代旧的 blueprint_data
+            merged_config_dict.update({
+                "asset_name": payload_obj.asset_name,
+                "asset_id": payload_obj.asset_id,
+
+                # [核心修正] 注入 Dataset 对象 (或其 dict)
+                # 建议注入 dump 后的 dict，以便 NarrationServiceConfig 重新校验（虽然有些冗余，但解耦更好）
+                # 或者直接注入 dataset_obj，因为我们在 schemas.py 里定义的是 Optional[NarrativeDataset]
+                "narrative_dataset": dataset_obj,
+
+                "lang": merged_config_dict.get("lang", "zh")
+            })
+
+            # 实例化 Config 对象，进行最终的参数校验 (如 ControlParams)
+            service_config = NarrationServiceConfig(**merged_config_dict)
+
+        except Exception as e:
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"Service Configuration assembly failed: {e}")
+
+        # --- [Step 5: 实例化基础设施] ---
         org_id = str(task.organization.org_id)
-        corpus_display_name = f"{asset_id}-{org_id}"
+        # RAG Corpus Display Name 通常格式为 "asset_id-org_id"
+        corpus_display_name = f"{payload_obj.asset_id}-{org_id}"
 
         gemini_processor = GeminiProcessor(
             api_key=settings.GOOGLE_API_KEY,
@@ -89,15 +112,13 @@ class NarrationHandler(BaseTaskHandler):
             debug_dir=settings.SHARED_LOG_ROOT / f"narration_task_{task.id}_debug"
         )
 
-        # [New] 初始化计费器
         cost_calculator = CostCalculator(
             pricing_data=settings.GEMINI_PRICING,
             usd_to_rmb_rate=settings.USD_TO_RMB_EXCHANGE_RATE
         )
 
-        narration_base = settings.BASE_DIR / 'ai_services' / 'narration'
+        narration_base = settings.BASE_DIR / 'ai_services' / 'biz_services' / 'narration'
 
-        # 3. 实例化 V3 Generator
         generator = NarrationGenerator(
             project_id=settings.GOOGLE_CLOUD_PROJECT,
             location=settings.GOOGLE_CLOUD_LOCATION,
@@ -110,22 +131,38 @@ class NarrationHandler(BaseTaskHandler):
             cost_calculator=cost_calculator
         )
 
-        # 4. 执行
-        result_data = generator.execute(
-            asset_name=asset_name,
-            corpus_display_name=corpus_display_name,
-            blueprint_path=final_blueprint_path,  # <-- [修改] 传入转换后的临时文件路径
-            config=final_config,
-            asset_id=asset_id
-        )
+        # --- [Step 6: 执行] ---
+        try:
+            # [Fix - 关键修改]
+            # 问题：直接调用 service_config.model_dump() 会输出 local_id 和 computed fields (duration)，
+            # 导致 Generator 内部再次校验 NarrativeDataset 时，因 extra='forbid' 和 alias 不匹配而失败。
 
-        # 5. 保存 (保持不变)
-        output_file_path = Path(output_file_path_str)
+            # 解决：
+            # 1. Dump 配置时，显式排除 narrative_dataset
+            config_payload = service_config.model_dump(mode='json', exclude={'narrative_dataset'})
+
+            # 2. 手动注入原始的 raw_data
+            # 这确保了传给 Generator 的是标准的 Input JSON 格式 (带 "id", 不带 "duration")
+            config_payload['narrative_dataset'] = raw_data
+
+            result_data = generator.execute(
+                asset_name=service_config.asset_name,
+                corpus_display_name=corpus_display_name,
+                config=config_payload  # 使用修正后的 payload
+            )
+        except Exception as e:
+            raise BizException(ErrorCode.LLM_INFERENCE_ERROR, msg=f"Generator execution failed: {e}")
+
+        # --- [Step 7: 结果持久化] ---
+        output_file_path = Path(payload_obj.absolute_output_path)
+        # 确保父目录存在
+        output_file_path.parent.mkdir(parents=True, exist_ok=True)
+
         with output_file_path.open('w', encoding='utf-8') as f:
             json.dump(result_data, f, ensure_ascii=False, indent=2)
 
         return {
-            "message": "Narration script generated successfully (V3) via Legacy Blueprint Converter.",
-            "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
+            "message": "Narration script generated successfully (V5 Dataset-Native).",
+            "output_file_path": str(output_file_path),
             "usage_report": result_data.get("ai_total_usage", {})
         }

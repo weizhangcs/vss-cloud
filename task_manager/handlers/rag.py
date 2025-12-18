@@ -1,118 +1,110 @@
-import json  # [新增] 用于处理 JSON 读写
+# task_manager/handlers/rag.py
+
+import json
 from pathlib import Path
 from django.conf import settings
 from task_manager.models import Task
-from ai_services.ai_platform.rag.deployer import RagDeployer
-from ai_services.ai_platform.rag.schemas import load_i18n_strings
-from file_service.infrastructure.gcs_storage import upload_file_to_gcs
-from .base import BaseTaskHandler
 from .registry import HandlerRegistry
-# [新增导入] 适配层和异常处理
+from .base import BaseTaskHandler
+
+from ai_services.ai_platform.rag.deployer import RagDeployer
+from ai_services.ai_platform.rag.schemas import RagTaskPayload  # [新增导入]
+
 from core.exceptions import BizException
 from core.error_codes import ErrorCode
-from ai_services.utils.blueprint_converter import BlueprintConverter, Blueprint  # 假设路径
+from file_service.infrastructure.gcs_storage import upload_file_to_gcs
+from ai_services.biz_services.narrative_dataset import NarrativeDataset
 
 
 @HandlerRegistry.register(Task.TaskType.DEPLOY_RAG_CORPUS)
 class RagDeploymentHandler(BaseTaskHandler):
+    """
+    RAG 部署任务处理器 (V6 Native & Schema-Driven)
+    """
+
     def handle(self, task: Task) -> dict:
         self.logger.info(f"Starting RAG DEPLOYMENT for Task ID: {task.id}...")
 
-        payload = task.payload
-        blueprint_path_str = payload.get("absolute_blueprint_input_path")
-        facts_path_str = payload.get("absolute_facts_input_path")
-
-        if not all([blueprint_path_str, facts_path_str]):
-            raise ValueError("Payload for DEPLOY_RAG_CORPUS is missing required absolute paths.")
-
-        # 1. 初始化临时目录
-        temp_dir = settings.SHARED_TMP_ROOT / f"rag_deploy_{task.id}"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-
-        # --- [核心利旧适配层] 转换新的 Blueprint 格式为旧版 ---
-        new_blueprint_path = Path(blueprint_path_str)
-        if not new_blueprint_path.is_file():
-            raise FileNotFoundError(f"Input blueprint file not found: {new_blueprint_path}")
-
-        # a. 读取新 Blueprint JSON
-        with new_blueprint_path.open('r', encoding='utf-8') as f:
-            new_blueprint_json = json.load(f)
-
-        # b. 校验并解析为新 Pydantic 对象
+        # --- [Step 1: Schema 校验] ---
         try:
-            new_blueprint_obj = Blueprint.model_validate(new_blueprint_json)
+            payload_obj = RagTaskPayload(**task.payload)
         except Exception as e:
-            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"New blueprint file validation failed: {e}")
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"Invalid Task Payload: {e}")
 
-        # c. 实例化并执行转换
-        converter = BlueprintConverter()
-        old_blueprint_dict = converter.convert(new_blueprint_obj)
+        # 路径解析 (优先使用 precise key，回退到 legacy key)
+        blueprint_str = payload_obj.absolute_blueprint_input_path or payload_obj.absolute_input_file_path
+        if not blueprint_str:
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg="Blueprint path is missing.")
 
-        # d. 保存转换后的旧版 Blueprint 到临时文件
-        converted_filename = f"narrative_blueprint_OLD_CONVERTED.json"
-        converted_path = temp_dir / converted_filename
+        blueprint_path = Path(blueprint_str)
+        facts_path = Path(payload_obj.absolute_facts_input_path)
 
-        with converted_path.open('w', encoding='utf-8') as f:
-            json.dump(old_blueprint_dict, f, ensure_ascii=False, indent=2)
+        if not blueprint_path.exists():
+            raise BizException(ErrorCode.FILE_IO_ERROR, msg=f"Blueprint not found: {blueprint_path}")
+        if not facts_path.exists():
+            raise BizException(ErrorCode.FILE_IO_ERROR, msg=f"Facts file not found: {facts_path}")
 
-        # e. 覆盖 Blueprint 路径：让下游服务使用转换后的文件
-        local_blueprint_path = converted_path
-        # --------------------------------------------------------
+        # --- [Step 2: 预加载 Dataset 以获取元数据] ---
+        # 我们需要在部署前拿到 asset_id，以便生成 Corpus Name
+        try:
+            with blueprint_path.open( encoding='utf-8') as f:
+                raw_data = json.load(f)
+            # 这里的加载也是一次“格式检查”
+            dataset = NarrativeDataset(**raw_data)
+        except Exception as e:
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"Invalid NarrativeDataset: {e}")
 
-        local_facts_path = Path(facts_path_str)
-
-        # 租户与资产标识
-        org_id = str(task.organization.org_id)
-        asset_id = payload.get("asset_id")
+        # 确定 Asset ID (Dataset 中的元数据优先级最高，其次是 Payload 中的)
+        asset_id = str(dataset.asset_uuid) if dataset.asset_uuid else payload_obj.asset_id
         if not asset_id:
-            raise ValueError("Payload missing required 'asset_id'.")
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR,
+                               msg="Asset ID could not be determined from Dataset or Payload.")
 
-        # 构建 Corpus Name
+        org_id = str(task.organization.org_id)
         corpus_display_name = f"{asset_id}-{org_id}"
 
-        # 初始化 Deployer
+        # 1. 初始化临时目录
+        work_dir = settings.SHARED_LOG_ROOT / f"rag_task_{task.id}_debug_staging"
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+        # 3. 初始化 Deployer
         deployer = RagDeployer(
             project_id=settings.GOOGLE_CLOUD_PROJECT,
             location=settings.GOOGLE_CLOUD_LOCATION,
             logger=self.logger
         )
 
-        # 加载 i18n (保持不变)
+        # 加载 i18n
         i18n_path = settings.BASE_DIR / 'ai_services' / 'ai_platform' / 'rag' / 'metadata' / 'schemas.json'
-        load_i18n_strings(i18n_path)
 
-        # 执行部署 (使用转换后的 local_blueprint_path)
-        deployer_result = deployer.execute(
-            corpus_display_name=corpus_display_name,
-            blueprint_path=local_blueprint_path,  # <-- 使用转换后的路径
-            facts_path=local_facts_path,
-            gcs_bucket_name=settings.GCS_DEFAULT_BUCKET,
-            staging_dir=temp_dir / "staging",
-            org_id=org_id,
-            asset_id=asset_id
-        )
+        # 4. 执行部署
+        try:
+            deployer_result = deployer.execute(
+                corpus_display_name=corpus_display_name,
+                dataset_obj=dataset,  # [优化] 直接传入已加载的对象，避免重复 IO
+                facts_path=facts_path,
+                gcs_bucket_name=settings.GCS_DEFAULT_BUCKET,
+                staging_dir=work_dir / "staging",
+                org_id=org_id,
+                asset_id=asset_id,
+                i18n_schema_path=i18n_path,
+                lang=payload_obj.lang
+            )
+        except Exception as e:
+            raise BizException(ErrorCode.RAG_DEPLOYMENT_ERROR, msg=f"Deployer failed: {e}")
 
         # 备份源文件到 GCS
         self.logger.info(f"Backing up source files for Task {task.id} to GCS...")
         backup_prefix = f"archive/tasks/{task.id}/inputs"
 
-        # 备份原始的 New Blueprint 文件，用于溯源
         upload_file_to_gcs(
-            local_file_path=new_blueprint_path,  # 原始输入文件
+            local_file_path=blueprint_path,
             bucket_name=settings.GCS_DEFAULT_BUCKET,
             gcs_object_name=f"{backup_prefix}/narrative_blueprint_NEW.json"
         )
 
-        # 备份转换后的 Old Blueprint 文件，用于调试
         upload_file_to_gcs(
-            local_file_path=converted_path,
-            bucket_name=settings.GCS_DEFAULT_BUCKET,
-            gcs_object_name=f"{backup_prefix}/{converted_filename}"
-        )
-
-        # 备份 facts 文件
-        upload_file_to_gcs(
-            local_file_path=local_facts_path,
+            local_file_path=facts_path,
             bucket_name=settings.GCS_DEFAULT_BUCKET,
             gcs_object_name=f"{backup_prefix}/character_facts.json"
         )

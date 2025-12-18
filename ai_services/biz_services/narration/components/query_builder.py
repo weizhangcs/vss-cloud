@@ -5,6 +5,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
+# [New] 引入强类型配置定义
+from ai_services.biz_services.narration.schemas import NarrationServiceConfig
+
 
 class NarrationQueryBuilder:
     def __init__(self, metadata_dir: Path, logger: logging.Logger):
@@ -12,7 +15,6 @@ class NarrationQueryBuilder:
         self.templates_data = self._load_templates(metadata_dir)
 
     def _load_templates(self, metadata_dir: Path) -> Dict:
-        # ... (保持不变) ...
         template_path = metadata_dir / "query_templates.json"
         if not template_path.is_file():
             self.logger.warning(f"Query templates not found at {template_path}, using empty defaults.")
@@ -25,7 +27,6 @@ class NarrationQueryBuilder:
             return {}
 
     def _safe_format(self, template: str, **kwargs) -> str:
-        # ... (保持不变) ...
         try:
             return template.format(**kwargs)
         except KeyError as e:
@@ -40,31 +41,31 @@ class NarrationQueryBuilder:
             self.logger.error(f"Format error: {e}")
             return template
 
-    def build(self, asset_name: str, config: Dict[str, Any]) -> str:
+    # [Refactor] 接收 NarrationServiceConfig 对象
+    def build(self, config: NarrationServiceConfig) -> str:
         """
         构建最终的 RAG 检索查询字符串。
         """
-        lang = config.get("lang", "zh")
-        lang_pack = self.templates_data.get(lang) or self.templates_data.get("en") or {}
+        # [Type Safe Access] 直接属性访问
+        lang = config.lang
+        asset_name = config.asset_name or "Unknown Asset"
 
-        control = config.get("control_params", {})
+        lang_pack = self.templates_data.get(lang) or self.templates_data.get("en") or {}
+        control = config.control_params
 
         # --- 1. Narrative Focus (支持 Custom) ---
-        focus_key = control.get("narrative_focus", "general")
+        focus_key = control.narrative_focus
 
-        # [核心修改] 判断是否为 Custom
         if focus_key == "custom":
-            # 从 custom_prompts 中获取
-            custom_prompts = control.get("custom_prompts") or {}
-            # 注意：config 是 dict，因为 QueryBuilder 还没完全迁移到 Pydantic 对象
-            # 这里的 config.get("control_params") 是一个 dict
-            # 但在上游 Validation 后，它可能是 model.dict()，所以这种写法是兼容的
-
-            # 如果是 dict 形式的 config
-            base_template = custom_prompts.get("narrative_focus", f"{asset_name}")
-            self.logger.info(f"Using CUSTOM Narrative Focus: {base_template[:50]}...")
+            # [Type Safe] custom_prompts 是 Optional[CustomPrompts] 对象
+            custom_prompts = control.custom_prompts
+            if custom_prompts and custom_prompts.narrative_focus:
+                base_template = custom_prompts.narrative_focus
+                self.logger.info(f"Using CUSTOM Narrative Focus: {base_template[:50]}...")
+            else:
+                # Fallback (理论上 Validator 会拦截，这里做二次防御)
+                base_template = f"{asset_name}"
         else:
-            # 使用预设模版
             focus_templates = lang_pack.get("focus", {})
             base_template = focus_templates.get(focus_key)
             if not base_template:
@@ -73,25 +74,28 @@ class NarrationQueryBuilder:
         query_parts = [self._safe_format(base_template, asset_name=asset_name)]
 
         # --- 2. Scope ---
-        scope = control.get("scope", {})
+        scope = control.scope
         scope_templates = lang_pack.get("scope", {})
 
-        if scope.get("type") == "episode_range":
-            start, end = scope.get("value", [1, 1])
-            tpl = scope_templates.get("episode_range", "")
-            if tpl:
-                query_parts.append(self._safe_format(tpl, start=start, end=end))
-        elif scope.get("type") == "scene_selection":
+        if scope.type == "episode_range":
+            # scope.value 是 Optional[List[int]]
+            vals = scope.value or [1, 1]
+            if len(vals) >= 2:
+                start, end = vals[0], vals[1]
+                tpl = scope_templates.get("episode_range", "")
+                if tpl:
+                    query_parts.append(self._safe_format(tpl, start=start, end=end))
+        elif scope.type == "scene_selection":
             tpl = scope_templates.get("scene_selection", "")
             if tpl:
                 query_parts.append(tpl)
 
         # --- 3. Character Focus ---
-        char_focus = control.get("character_focus", {})
+        char_focus = control.character_focus
         char_templates = lang_pack.get("character", {})
 
-        if char_focus.get("mode") == "specific":
-            chars = char_focus.get("characters", [])
+        if char_focus.mode == "specific":
+            chars = char_focus.characters
             if chars:
                 char_str = "、".join(chars) if lang == "zh" else ", ".join(chars)
                 tpl = char_templates.get("specific", "")

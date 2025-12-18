@@ -1,137 +1,119 @@
+# ai_services/biz_services/analysis/character/character.py
 import json
-import yaml
 from pathlib import Path
 from django.conf import settings
 from task_manager.models import Task
+from .registry import HandlerRegistry
+from .base import BaseTaskHandler
+
+# 引入数据基座
+from ai_services.biz_services.narrative_dataset import NarrativeDataset
+
+# [新增] 引入 Input Schemas
+from ai_services.biz_services.analysis.character.schemas import CharacterTaskPayload
+
+# 引入业务服务
+from ai_services.biz_services.analysis.character.character_identifier import CharacterIdentifier
 from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
 from ai_services.ai_platform.llm.cost_calculator import CostCalculator
-from ai_services.biz_services.analysis.character.character_identifier import CharacterIdentifier
-from .base import BaseTaskHandler
-from .registry import HandlerRegistry
 
 from core.exceptions import BizException
 from core.error_codes import ErrorCode
 
-from ai_services.utils.blueprint_converter import BlueprintConverter, Blueprint
 
 @HandlerRegistry.register(Task.TaskType.CHARACTER_IDENTIFIER)
-class CharacterIdentifierHandler(BaseTaskHandler):
+class CharacterHandler(BaseTaskHandler):
+    """
+    [Handler] 角色分析任务处理器 (Refactored: Fully Schema-Driven)
+    """
+
     def handle(self, task: Task) -> dict:
         self.logger.info(f"Starting CHARACTER IDENTIFIER for Task ID: {task.id}...")
 
-        payload = task.payload
-
-        #input_file_path_str = payload.get("absolute_input_file_path")
-        # input_file_path_str 现在指向的是新的 Blueprint 文件
-        new_blueprint_path_str = payload.get("absolute_input_file_path")
-
-        output_file_path_str = payload.get("absolute_output_path")
-        service_params = payload.get("service_params", {})
-
-        # [新增] 从新的 Blueprint Schema 中提取角色列表，如果客户端没有提供的话
-        characters_to_analyze = service_params.get("characters_to_analyze")
-
-        if not all([new_blueprint_path_str, output_file_path_str]) or service_params is None:
-            raise ValueError("Payload missing required paths or service_params.")
-
-        # 1. 加载配置
-        config_path = settings.BASE_DIR / 'ai_services' / 'configs' / 'ai_inference_config.yaml'
+        # --- [Step 1: 基于 Schema 的输入校验] ---
+        # 这一步替代了之前所有的 manual payload parsing
         try:
-            with config_path.open('r', encoding='utf-8') as f:
-                ai_config_full = yaml.safe_load(f)
-            ai_config = ai_config_full.get('character_identifier', {})
-        except Exception:
-            self.logger.error("Missing or invalid AI config file.")
-            raise
-
-        # 2. 【核心利旧适配层】转换新的 Blueprint 格式为旧版
-        new_blueprint_path = Path(new_blueprint_path_str)
-        if not new_blueprint_path.is_file():
-            raise FileNotFoundError(f"Input blueprint file not found: {new_blueprint_path}")
-
-        # a. 读取新 Blueprint JSON
-        with new_blueprint_path.open('r', encoding='utf-8') as f:
-            new_blueprint_json = json.load(f)
-
-        # b. 校验并解析为新 Pydantic 对象
-        try:
-            new_blueprint_obj = Blueprint.model_validate(new_blueprint_json)
+            # Pydantic 会自动处理类型转换、默认值填充和必填项检查
+            payload_obj = CharacterTaskPayload(**task.payload)
         except Exception as e:
-            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"New blueprint file validation failed: {e}")
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"Invalid Task Payload: {e}")
 
-        # c. [升级点] 如果调用方未提供角色列表，则从新 Blueprint 中提取
-        if not characters_to_analyze or len(characters_to_analyze) == 0:
-            characters_to_analyze = new_blueprint_obj.global_character_list
-            if not characters_to_analyze:
-                self.logger.warning(
-                    "No characters specified in payload or blueprint. Analyzing all main dialogue speakers.")
+        # 路径对象化
+        input_path = Path(payload_obj.absolute_input_file_path)
 
-        # d. 实例化并执行转换
-        converter = BlueprintConverter()
-        old_blueprint_dict = converter.convert(new_blueprint_obj)
+        # 输出路径逻辑
+        if payload_obj.absolute_output_path:
+            output_path = Path(payload_obj.absolute_output_path)
+        else:
+            output_path = input_path.parent / f"{input_path.stem}_character_analysis.json"
 
-        # e. 保存转换后的旧版 Blueprint 到临时文件
-        # 文件名保持唯一性，并指向临时目录
-        converted_filename = f"converted_old_{new_blueprint_path.name}"
-        converted_path = settings.SHARED_TMP_ROOT / converted_filename
+        # 提取业务参数对象
+        params = payload_obj.service_params
 
-        with converted_path.open('w', encoding='utf-8') as f:
-            json.dump(old_blueprint_dict, f, ensure_ascii=False, indent=2)
+        # 简单的业务逻辑防御
+        if not params.characters_to_analyze:
+            self.logger.warning("No 'characters_to_analyze' provided in service_params.")
 
-        # f. 覆盖输入路径：让下游服务使用转换后的文件
-        final_input_path = converted_path
+        # --- [Step 2: 加载并校验 NarrativeDataset] ---
+        try:
+            with input_path.open('r', encoding='utf-8') as f:
+                raw_data = json.load(f)
 
-        # 2. 准备依赖
+            # [Strict Mode]
+            dataset = NarrativeDataset(**raw_data)
+            self.logger.info(f"NarrativeDataset loaded successfully. Scenes: {len(dataset.scenes)}")
+
+        except Exception as e:
+            raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR,
+                               msg=f"Input file is not a valid NarrativeDataset: {e}")
+
+        # --- [Step 3: 初始化基础设施] ---
         gemini_processor = GeminiProcessor(
             api_key=settings.GOOGLE_API_KEY,
             logger=self.logger,
             debug_mode=settings.DEBUG,
-            debug_dir=settings.SHARED_LOG_ROOT / f"task_{task.id}_debug"
+            debug_dir=settings.SHARED_LOG_ROOT / f"char_task_{task.id}_debug"
         )
+
         cost_calculator = CostCalculator(
             pricing_data=settings.GEMINI_PRICING,
             usd_to_rmb_rate=settings.USD_TO_RMB_EXCHANGE_RATE
         )
 
-        service_name = CharacterIdentifier.SERVICE_NAME
-        prompts_dir = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'prompts'
-        localization_path = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'localization' / f"{service_name}.json"
-        schema_path = settings.BASE_DIR / 'ai_services' / 'analysis' / 'character' / 'metadata' / "fact_attributes.json"
+        # --- [Step 4: 初始化业务服务] ---
+        analysis_base = settings.BASE_DIR / 'ai_services' / 'biz_services' / 'analysis' / 'character'
 
-        identifier_service = CharacterIdentifier(
+        identifier = CharacterIdentifier(
             gemini_processor=gemini_processor,
             cost_calculator=cost_calculator,
-            prompts_dir=prompts_dir,
-            localization_path=localization_path,
-            schema_path=schema_path,
+            prompts_dir=analysis_base / 'prompts',
+            localization_path=analysis_base / 'localization' / 'character_identifier.json',
+            schema_path=analysis_base / 'metadata' / 'fact_attributes.json',
             logger=self.logger,
-            base_path=settings.SHARED_TMP_ROOT / f"task_{task.id}_workspace"
+            base_path=settings.SHARED_TMP_ROOT / f"char_task_{task.id}_work"
         )
 
-        # 3. 执行
-
-        final_params = ai_config.copy()
-        final_params.update(service_params)
-
-        # [修改] 注入最新的 characters_to_analyze
-        final_params['characters_to_analyze'] = characters_to_analyze
-
-        result_data = identifier_service.execute(
-            enhanced_script_path=final_input_path,  # <-- 使用转换后的临时文件
-            **final_params
+        # --- [Step 5: 执行] ---
+        # 直接使用 Pydantic 对象中的强类型属性
+        result_envelope = identifier.execute(
+            enhanced_script_path=input_path,
+            characters_to_analyze=params.characters_to_analyze,
+            lang=params.lang,
+            default_model=params.model,
+            default_temp=params.temp
         )
 
-        if result_data.get("status") != "success":
-            raise RuntimeError(f"Service returned failure: {result_data}")
+        # --- [Step 6: 结果落盘] ---
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 4. 保存结果
-        output_file_path = Path(output_file_path_str)
-        data_payload = result_data.get("data", {})
-        with output_file_path.open('w', encoding='utf-8') as f:
-            json.dump(data_payload.get("result", {}), f, ensure_ascii=False, indent=2)
+        final_result = result_envelope.get('data', {}).get('result', {})
+        usage_report = result_envelope.get('data', {}).get('usage', {})
+
+        with output_path.open('w', encoding='utf-8') as f:
+            json.dump(final_result, f, ensure_ascii=False, indent=2)
 
         return {
-            "message": "Character identification completed.",
-            "output_file_path": str(Path(settings.SHARED_TMP_ROOT.name) / output_file_path.name),
-            "usage_report": data_payload.get("usage", {})
+            "message": "Character analysis completed successfully.",
+            "output_file_path": str(output_path),
+            "usage_report": usage_report
         }

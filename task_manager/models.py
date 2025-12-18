@@ -4,7 +4,6 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone  # [新增] 用于获取当前时间
 from model_utils.models import TimeStampedModel
-from django_choices_field import TextChoicesField
 from django_fsm import FSMField, transition
 
 from organization.models import Organization, EdgeInstance

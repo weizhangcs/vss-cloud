@@ -17,24 +17,32 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.conf.urls.i18n import i18n_patterns
+from ninja import NinjaAPI
+from task_manager.api import router as task_router
+
+api = NinjaAPI(
+    title="VSS Cloud API",
+    version="1.0.0",
+    description="Visify Story Studio Cloud Native API"
+)
+
+# 注册 task_manager 的路由
+# 访问路径变为: /api/tasks/
+api.add_router("/tasks/", task_router)
 
 urlpatterns = [
     # 语言切换器视图 (保持不变，无前缀)
     path("i18n/", include("django.conf.urls.i18n")),  #
 
-    # --- [核心修改] ---
     # 将所有 API 移到 i18n_patterns 之外
     # 它们将不再有 /en/ 前缀，也不会触发重定向
     path('api/v1/files/', include('file_service.urls', namespace='file_service')),
-    path('api/v1/tasks/', include('task_manager.urls', namespace='task_manager')),
-    # ------------------
+    #path('api/v1/tasks/', include('task_manager.urls', namespace='task_manager')),
+    path("api/v1/", api.urls),
 ]
 
 # --- [核心修改] ---
 # 只有面向用户的页面 (Admin) 才应该在 i18n_patterns 中
 urlpatterns += i18n_patterns(
     path("admin/", admin.site.urls),  #
-
-    # [移除] path('api/v1/files/', ...)
-    # [移除] path('api/v1/tasks/', ...)
 )

@@ -1,4 +1,4 @@
-# utils/local_execution_bootstrap.py
+# tests/lib/bootstrap.py
 
 import logging
 from pathlib import Path
