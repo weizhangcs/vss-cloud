@@ -72,7 +72,7 @@ class CharacterHandler(BaseTaskHandler):
             api_key=settings.GOOGLE_API_KEY,
             logger=self.logger,
             debug_mode=settings.DEBUG,
-            debug_dir=settings.SHARED_LOG_ROOT / f"char_task_{task.id}_debug"
+            debug_dir=settings.SHARED_LOG_ROOT / f"character_task_{task.id}_debug"
         )
 
         cost_calculator = CostCalculator(
@@ -104,7 +104,14 @@ class CharacterHandler(BaseTaskHandler):
         )
 
         # --- [Step 6: 结果落盘] ---
+        output_path = Path(payload_obj.absolute_output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # 假设 output_path 是 Service 写入文件的绝对路径
+            relative_path = output_path.relative_to(settings.SHARED_ROOT)
+        except ValueError:
+            relative_path = output_path.name
 
         final_result = result_envelope.get('data', {}).get('result', {})
         usage_report = result_envelope.get('data', {}).get('usage', {})
@@ -114,6 +121,6 @@ class CharacterHandler(BaseTaskHandler):
 
         return {
             "message": "Character analysis completed successfully.",
-            "output_file_path": str(output_path),
+            "output_file_path": str(relative_path),
             "usage_report": usage_report
         }

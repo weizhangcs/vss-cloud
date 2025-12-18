@@ -19,25 +19,20 @@ from django.urls import path, include
 from django.conf.urls.i18n import i18n_patterns
 from ninja import NinjaAPI
 from task_manager.api import router as task_router
+from file_service.api import router as file_router
 
 api = NinjaAPI(
     title="VSS Cloud API",
-    version="1.0.0",
-    description="Visify Story Studio Cloud Native API"
+    version="1.3.0",
+    description="Visify Story Studio Cloud Native API",
+    urls_namespace="vss_api"
 )
 
-# 注册 task_manager 的路由
-# 访问路径变为: /api/tasks/
-api.add_router("/tasks/", task_router)
+api.add_router("/tasks", task_router, tags=["Task Manager"])
+api.add_router("/files", file_router, tags=["File Service"])
 
 urlpatterns = [
-    # 语言切换器视图 (保持不变，无前缀)
     path("i18n/", include("django.conf.urls.i18n")),  #
-
-    # 将所有 API 移到 i18n_patterns 之外
-    # 它们将不再有 /en/ 前缀，也不会触发重定向
-    path('api/v1/files/', include('file_service.urls', namespace='file_service')),
-    #path('api/v1/tasks/', include('task_manager.urls', namespace='task_manager')),
     path("api/v1/", api.urls),
 ]
 

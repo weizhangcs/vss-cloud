@@ -158,11 +158,16 @@ class NarrationHandler(BaseTaskHandler):
         # 确保父目录存在
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        try:
+            relative_path = output_file_path.relative_to(settings.SHARED_ROOT)
+        except ValueError:
+            relative_path = output_file_path.name
+
         with output_file_path.open('w', encoding='utf-8') as f:
             json.dump(result_data, f, ensure_ascii=False, indent=2)
 
         return {
             "message": "Narration script generated successfully (V5 Dataset-Native).",
-            "output_file_path": str(output_file_path),
+            "output_file_path": str(relative_path),
             "usage_report": result_data.get("ai_total_usage", {})
         }

@@ -49,6 +49,8 @@ class LocalizationHandler(BaseTaskHandler):
             if not blueprint_path.exists():
                 raise BizException(ErrorCode.FILE_IO_ERROR, msg=f"Blueprint not found: {blueprint_path}")
 
+            debug_dir_name = f"localization_{task.id}_debug"
+
             # --- [Step 3: 加载 Dataset] ---
             try:
                 with blueprint_path.open('r', encoding='utf-8') as f:
@@ -57,12 +59,14 @@ class LocalizationHandler(BaseTaskHandler):
             except Exception as e:
                 raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, msg=f"Invalid NarrativeDataset: {e}")
 
+
+
             # --- [Step 4: 初始化基础设施] ---
             gemini_processor = GeminiProcessor(
                 api_key=settings.GOOGLE_API_KEY,
                 logger=self.logger,
                 debug_mode=payload_obj.service_params.debug,
-                debug_dir=settings.SHARED_LOG_ROOT / "debug_localization" / str(task.id)
+                debug_dir=settings.SHARED_LOG_ROOT / debug_dir_name
             )
 
             cost_calculator = CostCalculator(
@@ -96,13 +100,20 @@ class LocalizationHandler(BaseTaskHandler):
             output_path = Path(payload_obj.absolute_output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
+            try:
+                relative_output_path = output_path.relative_to(settings.SHARED_ROOT)
+            except ValueError:
+                # 兜底：如果不在 SHARED_ROOT 下 (极少情况)，则保留文件名或报错
+                self.logger.warning(f"Output path {output_path} is not under SHARED_ROOT.")
+                relative_output_path = output_path.name
+
             with output_path.open('w', encoding='utf-8') as f:
                 # result_data 已经是 dump 后的 dict
                 json.dump(result_data, f, ensure_ascii=False, indent=2)
 
             return {
                 "message": f"Localization to {payload_obj.service_params.target_lang} completed.",
-                "output_file_path": str(output_path),
+                "output_file_path": str(relative_output_path),
                 "usage_report": result_data.get("ai_total_usage", {})
             }
 

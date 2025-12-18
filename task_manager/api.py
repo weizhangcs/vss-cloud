@@ -10,7 +10,7 @@ from ninja import NinjaAPI, Router
 from ninja.errors import HttpError
 
 from .models import Task
-from .auth import EdgeAuth
+from core.auth import EdgeAuth
 from .schemas import TaskCreateRequest, TaskResponse
 from core.error_codes import ErrorCode  # 假设你保留了错误码定义
 
@@ -101,10 +101,7 @@ def get_task_detail(request, task_id: int):
     # --- [逻辑移植] 计算 download_url ---
     download_url = None
     if task.status == Task.TaskStatus.COMPLETED and task.result and task.result.get("output_file_path"):
-        # build_absolute_uri 需要 request 对象，Ninja 会自动处理
-        # 注意：这里假设你有一个 file_service:task-download 的路由
-        # 如果没有 request 上下文，可以手动拼接
-        path = reverse('file_service:task-download', kwargs={'task_id': task.id})
+        path = reverse('vss_api:task_download', kwargs={'task_id': task.id})
         download_url = request.build_absolute_uri(path)
 
     # 构造响应对象
