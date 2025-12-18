@@ -25,6 +25,6 @@ Your output MUST be a strictly valid JSON object. This object must contain only 
 
 Output Example:
 ```json
-{
+{{
   "selected_ids": ["ID-3", "ID-5", "ID-6"]
-}
+}}
