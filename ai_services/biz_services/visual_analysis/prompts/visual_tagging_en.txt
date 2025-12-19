@@ -1,0 +1,9 @@
+Analyze this video frame for a professional video editing system.
+Output ONLY a JSON object with these keys:
+{
+    "shot_type": "string (e.g., Close-up, Medium Shot, Wide Shot)",
+    "subject": "string (Main person, object, or scenery)",
+    "action": "string (Brief description of what is happening)",
+    "mood": "string (Visual atmosphere, e.g., Tense, Calm)",
+    "usability": "boolean (true if the image is clear)"
+}

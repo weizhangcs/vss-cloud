@@ -344,12 +344,29 @@ class GeminiProcessor:
             return None
 
     def _sanitize_content(self, content: Any) -> Any:
-        """从内容中移除 API key 或 secret 等敏感信息。"""
+        """
+        从内容中移除 API key 或 secret 等敏感信息，
+        [新增] 并将无法序列化的对象（如图片）转换为字符串占位符。
+        """
         if isinstance(content, dict):
             content = content.copy()
             for key in list(content.keys()):
+                val = content[key]
+                # 1. 敏感信息脱敏
                 if "key" in key.lower() or "secret" in key.lower():
                     content[key] = "***REDACTED***"
+                # 2. [新增] 递归处理嵌套字典
+                else:
+                    content[key] = self._sanitize_content(val)
+
+        elif isinstance(content, list):
+            # [新增] 处理列表中的图片对象
+            return [self._sanitize_content(item) for item in content]
+
+        # [新增] 检查是否是 PIL Image 对象 (通过类名判断，避免引入 PIL 依赖)
+        elif hasattr(content, '__class__') and 'Image' in content.__class__.__name__:
+             return f"<Image Object: {content.__class__.__name__}>"
+
         return content
 
     def _parse_json_response(self, text: str) -> Dict[str, Any]:

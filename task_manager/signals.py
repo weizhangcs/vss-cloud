@@ -14,6 +14,7 @@ QUEUE_ROUTING = {
     Task.TaskType.GENERATE_NARRATION: 'queue_gemini',
     Task.TaskType.LOCALIZE_NARRATION: 'queue_gemini',
     Task.TaskType.CHARACTER_IDENTIFIER: 'queue_gemini',
+    Task.TaskType.VISUAL_ANALYSIS: 'queue_gemini',
     # B-Roll 选择主要使用 Gemini 进行语义分析
     Task.TaskType.GENERATE_EDITING_SCRIPT: 'queue_gemini',
 
