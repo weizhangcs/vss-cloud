@@ -86,61 +86,150 @@ class GeminiProcessor:
             self.logger.error(f"初始化 genai.Client 时失败: {e}", exc_info=True)
             raise
 
+    def _build_generation_config(self, model_name: str, temperature: Optional[float] = None,
+                                 tools: Optional[List] = None) -> Optional[types.GenerateContentConfig]:
+        """
+        [Final Strategic Fix] 移除 JSON Mode 硬约束，解除与 AFC 的死锁
+        """
+
+        # 1. 基础配置：不再强制 response_mime_type="application/json"
+        # 我们依靠 Prompt 和 Regex Parser 来保证 JSON 格式
+        config_params = {}
+
+        # 2. 安全设置 (保留 BLOCK_NONE，这对 Batch 5 很重要)
+        # 使用原生字典列表
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        ]
+        config_params["safety_settings"] = safety_settings
+
+        # 3. 温度控制
+        if temperature is not None:
+            config_params['temperature'] = temperature
+
+        # 4. 针对 Gemini 3.0 的处理 (3.0 依然可以尝试 JSON Mode，或者也降级)
+        # 为了稳妥，建议对 2.5 和 3.0 都统一策略：不强制 JSON Mode
+        if "gemini-3" in model_name:
+            # 即使是 3.0，如果环境里有 AFC 干扰，JSON Mode 也可能导致不稳定
+            # 所以这里也去掉 response_mime_type
+
+            target_level = "high"
+            if temperature is not None and temperature < 0.3:
+                target_level = "low"
+
+            return types.GenerateContentConfig(
+                # response_mime_type="application/json", <--- 删除这行
+                safety_settings=safety_settings,
+                thinking_config=types.ThinkingConfig(
+                    include_thoughts=False,
+                    thinking_level=target_level
+                )
+            )
+
+        # 5. Legacy 模型 (Gemini 2.5)
+        else:
+            # 只要 config 里没有 response_mime_type，也没有 tools (或 tools=None)
+            # 就算 SDK 默认带了 AFC，普通 Text Mode 也不会崩溃
+            return types.GenerateContentConfig(**config_params)
+
+    def _extract_clean_text(self, response) -> str:
+        """
+        [诊断模式] 深度打印 API 响应的内部结构
+        """
+        text_parts = []
+        try:
+            # 1. 检查 Candidates 是否存在
+            if not response.candidates:
+                self.logger.error("❌ DIAGNOSTIC: No candidates returned! (Empty Response)")
+                return ""
+
+            candidate = response.candidates[0]
+
+            # 2. 打印关键的 Finish Reason (这是破案的关键)
+            # 正常应该是 STOP。如果是 SAFETY, RECITATION, 或 OTHER，那就是被拦截了。
+            finish_reason = getattr(candidate, 'finish_reason', 'UNKNOWN')
+            self.logger.info(f"🔍 DIAGNOSTIC: Finish Reason = {finish_reason}")
+
+            # 3. 检查是否触发了 Function Call (AFC 幽灵)
+            for part in candidate.content.parts:
+                if hasattr(part, 'function_call') and part.function_call:
+                    self.logger.error(f"❌ DIAGNOSTIC: Model tried to call a function! Name: {part.function_call.name}")
+                    # 如果它试图调用函数，说明 Prompt 或 Tools 配置有问题
+                    return ""
+
+                if hasattr(part, 'text') and part.text:
+                    text_parts.append(part.text)
+
+            # 4. 如果没有文本，打印整个 Candidate 结构
+            if not text_parts:
+                self.logger.error(f"❌ DIAGNOSTIC: No text parts found. Full Candidate dump: {candidate}")
+
+        except Exception as e:
+            self.logger.error(f"Diagnostic extraction failed: {e}")
+            return ""
+
+        return "".join(text_parts)
+
     def generate_content(
             self,
             model_name: str,
             prompt: Union[str, List],
             stream: bool = False,
             temperature: Optional[float] = None,
+            tools: Optional[List] = None,
+            tool_config: Optional[Any] = None,
             **generation_kwargs
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
-        执行同步的 AI 内容生成请求。
-
-        Args:
-            model_name (str): 要使用的 Gemini 模型名称。
-            prompt (Union[str, List]): 输入的 Prompt 文本或多部分内容列表。
-            stream (bool): 是否使用流式响应 (当前同步模式下默认不使用)。
-            temperature (Optional[float]): 模型生成温度。
-            **generation_kwargs: 额外的生成配置参数。
-
-        Returns:
-            tuple: (解析后的 JSON 数据, AI 调用用量报告)。
+        执行同步的 AI 内容生成请求 (已升级适配 Gemini 3)。
         """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
 
-        # 构建配置对象
-        config_params = {'temperature': temperature}
-        config = types.GenerateContentConfig(**config_params) if any(config_params.values()) else None
+        # [修改 1] 调用智能配置构建器
+        config = self._build_generation_config(model_name, temperature, tools=tools)
+
+        # 合并 kwargs 中的额外参数 (如果有)
+        # 注意：generation_kwargs 中的冲突参数可能需要清理，这里暂时略过
 
         request_log = {
-            "model": model_name, "prompt": prompt, "kwargs": generation_kwargs,
-            "timestamp": timestamp, "caller": self.caller_class
+            "model": model_name,
+            "prompt": prompt, # 生产环境建议截断 prompt 日志
+            "config_dump": str(config) if config else "None",  # 记录一下 Config 方便调试
+            "timestamp": timestamp,
+            "caller": self.caller_class
         }
         self._log_to_file("requests", "request_", request_log)
 
         start_time = datetime.now()
+        if tools is None:
+            generation_kwargs.pop('tools', None)
+            generation_kwargs.pop('tool_config', None)
+
         try:
-            # 定义 API 调用的函数句柄，传递给重试包装器
+            # 定义 API 调用的函数句柄
             api_call = lambda: self._client.models.generate_content(
-                model=model_name, contents=prompt, config=config
+                model=model_name, contents=prompt,config=config
             )
             response = self._retry_api_call(api_call, "同步生成")
 
-            full_response_text = response.text
+            # [修改 2] 使用安全提取方法，替代 response.text
+            full_response_text = self._extract_clean_text(response)
 
-            # 提取 Tokens 用量
+            # 提取 Tokens 用量 (Gemini 3 的结构可能略有不同，建议加 getattr 防御)
+            usage_meta = getattr(response, 'usage_metadata', None)
             usage = {
                 "model_used": model_name,
-                "prompt_tokens": response.usage_metadata.prompt_token_count,
-                "completion_tokens": response.usage_metadata.candidates_token_count,
-                "total_tokens": response.usage_metadata.total_token_count
+                "prompt_tokens": getattr(usage_meta, 'prompt_token_count', 0),
+                "completion_tokens": getattr(usage_meta, 'candidates_token_count', 0),
+                "total_tokens": getattr(usage_meta, 'total_token_count', 0)
             }
 
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
 
-            # 丰富用量报告，包含时间戳和请求计数
             usage.update({
                 "start_time_utc": start_time.isoformat(),
                 "end_time_utc": end_time.isoformat(),

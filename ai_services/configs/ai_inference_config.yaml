@@ -4,7 +4,7 @@
 # 人物事实识别服务 (CharacterIdentifier)
 character_identifier:
   # FIX: 最终修正为最稳定的、无后缀的 Canonical ID，以最大限度解决 404 错误。
-  default_model: "gemini-2.0-flash"
+  default_model: "gemini-2.5-flash"
   default_temp: 0.1
   # 保持场景分块大小的默认值
   default_scene_chunk_size: 10

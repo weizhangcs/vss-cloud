@@ -1,0 +1,23 @@
+You are a Data Consistency Specialist.
+Your task is to normalize a list of character names extracted from a movie subtitle.
+
+## Input Data (List of Names)
+{name_list}
+
+## Instructions
+1. **Analyze**: Identify names that likely refer to the same character (e.g., "Thaddeus", "Thaddeus Bradley", "Bradley").
+2. **Standardize**: Choose the most complete/formal name as the "Standard Name".
+3. **Map**: Create a mapping from "Variation" to "Standard Name".
+   - If a name is unique and needs no change, map it to itself.
+   - Fix typos if obvious.
+   - If "Magician (Atlas)" and "Daniel Atlas" appear, map them to "Daniel Atlas".
+
+## Output Format (JSON)
+{
+  "normalization_map": {
+    "Thaddeus": "Thaddeus Bradley",
+    "Bradley": "Thaddeus Bradley",
+    "Magician (Atlas)": "Daniel Atlas",
+    "J. Daniel Atlas": "Daniel Atlas"
+  }
+}

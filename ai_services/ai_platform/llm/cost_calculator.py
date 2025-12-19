@@ -44,12 +44,13 @@ class CostCalculator:
 
         matched_key = None
         for key in self.sorted_pricing_keys:
-            # 使用更准确的模型名称进行匹配
+            # 使用更准确的模型名称进行匹配 (sorted_pricing_keys 已按长度降序，确保最长匹配)
             if key in model_key_for_pricing:
                 matched_key = key
                 break
 
         if not matched_key:
+            # 返回 0 成本但不报错，避免中断业务，同时给出警告
             return {"cost_usd": 0.0, "cost_rmb": 0.0,
                     "warning": f"No pricing info found for model: {model_key_for_pricing}"}
 
@@ -57,23 +58,26 @@ class CostCalculator:
 
         # --- 核心计费逻辑：根据 Vertex AI 规则处理分层 ---
 
-        # 1. 设置阈值：只有 Pro 模型使用 200K 阈值，其他（如 Flash）使用超大阈值走平价
-        if matched_key == "gemini-2.5-pro":  # <-- BUG FIXED: 从 1.5-pro 更改为 2.5-pro
-            # Gemini 2.5 Pro 的官方分层阈值是 200,000 tokens
-            threshold = pricing_info.get("threshold", 200000)
-        else:
-            # Flash 或其他平价模型，设置一个理论上达不到的阈值
-            threshold = 999999999
+        # [修改点] 移除硬编码的模型名称判断 (如 "gemini-2.5-pro" or "gemini-3-pro")。
+        # 直接从配置中读取 threshold。
+        # 您的 .env 文件已为所有模型配置了阈值：
+        # - Pro 类模型配置为 200,000
+        # - Flash 类模型配置为 9999999 (极大值)
+        # 如果配置中缺失，默认给一个极大值（即默认走标准低价，避免意外高额计费）。
+        threshold = pricing_info.get("threshold", 999999999)
 
-            # 2. 选择价格层级
+        # 2. 选择价格层级
         if prompt_tokens <= threshold:
-            # 标准层价格 (适用于所有 Flash 模型，以及 Pro 模型的短上下文)
+            # 标准层价格 (Standard Pricing)
+            # 适用于：Flash 全系、Pro 模型的短 Prompt (<200k)
             tier_pricing = pricing_info.get("standard", {})
         else:
-            # 长上下文层价格 (仅适用于 Pro 模型的长上下文)
+            # 长上下文层价格 (Long Context Pricing)
+            # 适用于：Pro 模型的长 Prompt (>200k)
+            # 如果配置缺失 long 价格，回退到 standard，防止报错
             tier_pricing = pricing_info.get("long", pricing_info.get("standard", {}))
 
-        # 3. 计算成本
+        # 3. 计算成本 (单价单位通常为 per 1M tokens)
         input_cost = (prompt_tokens / 1_000_000) * tier_pricing.get("input", 0)
         output_cost = (completion_tokens / 1_000_000) * tier_pricing.get("output", 0)
 

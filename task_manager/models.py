@@ -23,6 +23,7 @@ class Task(TimeStampedModel):
         GENERATE_EDITING_SCRIPT = "GENERATE_EDITING_SCRIPT", _("Generate Editing Script")
         LOCALIZE_NARRATION = "LOCALIZE_NARRATION", _("Localize Narration")
         VISUAL_ANALYSIS = 'visual_analysis', _('Visual Analysis & Refinement')
+        SUBTITLE_CONTEXT = 'subtitle_context', 'Subtitle Context Analysis'
 
     class TaskStatus(models.TextChoices):
         PENDING = "PENDING", _("Pending")

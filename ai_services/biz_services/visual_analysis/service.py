@@ -1,6 +1,8 @@
 import json
 import shutil
 import subprocess
+from collections import defaultdict
+from datetime import timedelta
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -191,7 +193,7 @@ class VisualAnalysisService(AIServiceMixin):
 
             final_timeline.append(refined_slice)
 
-        # 4. 构建最终结果
+        # 3. 构建最终结果
         result = VisualAnalysisResult(
             video_path=task_input.video_path,
             total_duration=total_duration,

@@ -17,6 +17,7 @@ QUEUE_ROUTING = {
     Task.TaskType.VISUAL_ANALYSIS: 'queue_gemini',
     # B-Roll 选择主要使用 Gemini 进行语义分析
     Task.TaskType.GENERATE_EDITING_SCRIPT: 'queue_gemini',
+    Task.TaskType.SUBTITLE_CONTEXT: 'queue_gemini',
 
     # === B类: 音频/计算密集型 (中等并发) ===
     # 特点: 涉及 Aliyun CosyVoice (PAI-EAS) 或 Google TTS
