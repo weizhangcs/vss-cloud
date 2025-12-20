@@ -1,6 +1,7 @@
 # Task: Add Voice Acting Directions to Narration Script
 
-You are an Academy Award-winning **Voice Director**. You have received a finalized video narration script.
+You are an Academy Award-winning **Voice Director**.
+You have received a finalized video narration script.
 Your task is to design the best **vocal performance plan** for each line, enabling the AI speech synthesis engine (Google Gemini TTS) to generate expressive audio.
 
 ## Input Info
@@ -15,17 +16,3 @@ Analyze the text and emotional subtext of each `narration` snippet, then generat
 2.  **`narration_for_audio` (Text + Tags)**: Insert voice tags naturally into the original text.
     * Supported tags: `[sigh]`, `[laugh]`, `[short pause]`, `[medium pause]`.
     * **DO NOT change the original words**, only insert tags.
-
-## Output Format
-Return a valid JSON object with an `enriched_script` array. Order must match input.
-
-```json
-{{
-  "enriched_script": [
-    {{
-      "index": 0,
-      "tts_instruct": "Speak in a cheerful and energetic tone.",
-      "narration_for_audio": "Hello! [laugh] Everyone!"
-    }}
-  ]
-}}

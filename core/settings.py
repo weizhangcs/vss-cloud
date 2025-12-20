@@ -298,10 +298,12 @@ GEMINI_PRICING = {
         "threshold": config('GEMINI_2_5_PRO_THRESHOLD_TOKENS', cast=int, default=200000),
         "standard": {
             "input": config('GEMINI_2_5_PRO_INPUT_USD_STANDARD', cast=float, default=1.25),
+            "cached": config('GEMINI_2_5_PRO_INPUT_USD_CACHED', cast=float, default=0.30),
             "output": config('GEMINI_2_5_PRO_OUTPUT_USD_STANDARD', cast=float, default=10.00),
         },
         "long": {
             "input": config('GEMINI_2_5_PRO_INPUT_USD_LONG', cast=float, default=2.50),
+            "cached": config('GEMINI_2_5_PRO_INPUT_USD_CACHED', cast=float, default=0.30),
             "output": config('GEMINI_2_5_PRO_OUTPUT_USD_LONG', cast=float, default=15.00),
         }
     },
@@ -311,6 +313,7 @@ GEMINI_PRICING = {
         "threshold": config('GEMINI_2_5_FLASH_THRESHOLD_TOKENS', cast=int, default=9999999),  # Flat rate
         "standard": {
             "input": config('GEMINI_2_5_FLASH_INPUT_USD_STANDARD', cast=float, default=0.30),
+            "cached": config('GEMINI_2_5_FLASH_INPUT_USD_CACHED', cast=float, default=0.075),
             "output": config('GEMINI_2_5_FLASH_OUTPUT_USD_STANDARD', cast=float, default=2.50),
         },
         # NOTE: Flash 模型无长上下文分层，故不定义 'long' 键

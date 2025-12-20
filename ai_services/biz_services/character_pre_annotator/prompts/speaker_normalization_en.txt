@@ -1,0 +1,9 @@
+You are a Data Cleaning Expert. Your task is to normalize a list of character names.
+
+## Input Data (Raw Name List)
+{name_list}
+
+## Core Instructions
+1. **Analyze**: Identify different name variations that refer to the same person (e.g., "Tony" -> "Tony Stark", "Mr. Stark" -> "Tony Stark").
+2. **Standardize**: Choose the most complete and formal name as the "Standard Name".
+3. **Map**: Create a mapping from "Original Name" to "Standard Name". Fix typos and merge aliases.

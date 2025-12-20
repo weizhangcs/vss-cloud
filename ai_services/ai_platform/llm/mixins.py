@@ -1,71 +1,130 @@
-# ai_services/common/gemini/
-# 描述: 一个包含所有AI服务通用能力的Mixin类。
-
 import json
 from pathlib import Path
-from typing import Dict, Any, Union, List, Optional
-from datetime import datetime
+from typing import Dict, Any, Union
 from functools import lru_cache
 from collections import defaultdict
+from pydantic import BaseModel
 
 
 class AIServiceMixin:
     """
-    一个可复用的“混入”类，为服务提供与AI交互相关的通用方法，
-    包括加载提示词、构建Prompt、聚合用量数据等。
+    [Infrastructure] 通用 AI 服务能力混入类 (V5 Final Strict).
+
+    Design Philosophy:
+    - Explicit Dependencies: prompts_dir 和 lang 均为核心定位参数，必须显式定义。
+    - Stateless Logic: 核心逻辑不依赖实例状态。
     """
 
-    @lru_cache(maxsize=4)
-    def _load_prompt_template(self, lang: str, prompt_name: str) -> str:
-        """根据名称从服务的prompts目录加载并缓存Prompt模板。"""
-        # self.prompts_dir 和 self.logger 将由继承此Mixin的子类提供
-        template_file = self.prompts_dir / f"{prompt_name}_{lang}.txt"
-        if not template_file.is_file():
-            raise FileNotFoundError(
-                f"Prompt template not found for service [{self.__class__.__name__}]: {template_file}")
-        self.logger.info(f"Loading prompt template from {template_file}...")
-        return template_file.read_text(encoding='utf-8')
-
-    def _load_localization_file(self, localization_path: Path, lang: str):
-        """加载当前服务专属的语言包文件。"""
-        if not localization_path.is_file():
-            self.logger.warning(f"语言包文件未找到: {localization_path}。将使用默认文本。")
-            self.labels = defaultdict(str)
-            return
-
-        with localization_path.open('r', encoding='utf-8') as f:
-            all_loc_data = json.load(f)
-
-        self.labels = all_loc_data.get(lang, all_loc_data.get('en', {}))
-        if not self.labels:
-            self.logger.error(f"在语言包中未能找到 {lang} 或 en 的配置。")
-
-    def _build_prompt(self, prompt_name: str, **kwargs) -> str:
+    @staticmethod
+    @lru_cache(maxsize=32)
+    def _read_template_file(base_dir: Path, lang: str, prompt_name: str) -> str:
         """
-        一个通用的Prompt构建方法。
+        [Static Core] 纯函数式的文件读取，底层 IO 操作。
+        缓存 Key 为 (Path, str, str)，实现跨实例缓存共享。
         """
-        lang = kwargs.get('lang', 'en')
-        template = self._load_prompt_template(lang, prompt_name)
+        # 1. 构造路径
+        target_file = base_dir / f"{prompt_name}_{lang}.txt"
+
+        # 2. 检查与回退 (Fallback to English)
+        if not target_file.is_file() and lang != 'en':
+            target_file = base_dir / f"{prompt_name}_en.txt"
+
+        if not target_file.is_file():
+            # 这里的异常抛出是合理的，因为这是 IO 层的“未找到文件”事实
+            raise FileNotFoundError(f"Template '{prompt_name}' not found in {base_dir} (lang={lang})")
+
+        # 3. 读取内容
+        return target_file.read_text(encoding='utf-8')
+
+    def _load_prompt_template(self, prompts_dir: Path, lang: str, prompt_name: str) -> str:
+        """
+        [Wrapper] 负责日志记录和异常捕获，依赖显式传入的参数。
+        """
+        try:
+            # 调用静态缓存方法
+            return self._read_template_file(prompts_dir, lang, prompt_name)
+        except Exception as e:
+            if hasattr(self, 'logger'):
+                self.logger.error(f"Failed to load template '{prompt_name}': {e}")
+            return ""
+
+    def _build_prompt(self, prompts_dir: Path, prompt_name: str, lang: str = "en", **kwargs) -> str:
+        """
+        通用的 Prompt 构建方法。
+
+        Args:
+            prompts_dir: [Explicit] 提示词目录 (Path对象)
+            prompt_name: [Explicit] 模板文件名前缀
+            lang:        [Explicit] 语言代码 (默认为 'en')
+            **kwargs:    仅用于填充模板的变量 (Prompt Context)
+        """
+        # 显式传递 lang，不再从 kwargs 中“打捞”
+        template = self._load_prompt_template(prompts_dir, lang, prompt_name)
+
+        if not template:
+            return ""
+
+        # 简单的字符串替换
         for key, value in kwargs.items():
             placeholder = "{" + key + "}"
             if placeholder in template:
-                str_value = str(value) if not isinstance(value, (dict, list)) else json.dumps(value, ensure_ascii=False,
-                                                                                              indent=2)
+                if isinstance(value, (dict, list)):
+                    str_value = json.dumps(value, ensure_ascii=False, indent=2)
+                else:
+                    str_value = str(value)
                 template = template.replace(placeholder, str_value)
         return template
 
-    def _aggregate_usage(self, total_usage: dict, new_usage: dict):
+    def _load_localization_file(self, localization_path: Path, lang: str):
         """
-        一个通用的、动态的usage聚合方法。
+        加载服务专属的语言包文件 (UI Labels)。
         """
-        if not new_usage: return
-        for key, value in new_usage.items():
-            if isinstance(value, (int, float)):
-                total_usage[key] = total_usage.get(key, 0) + value
-        if 'start_time_utc' in new_usage:
-            if 'session_start_time' not in total_usage or new_usage['start_time_utc'] < total_usage.get(
-                    'session_start_time'):
-                total_usage['session_start_time'] = new_usage['start_time_utc']
-        if 'end_time_utc' in new_usage:
-            if 'session_end_time' not in total_usage or new_usage['end_time_utc'] > total_usage.get('session_end_time'):
-                total_usage['session_end_time'] = new_usage['end_time_utc']
+        if not localization_path.is_file():
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Localization file missing: {localization_path}")
+            self.labels = defaultdict(str)
+            return
+
+        try:
+            with localization_path.open( encoding='utf-8') as f:
+                all_loc_data = json.load(f)
+            self.labels = all_loc_data.get(lang, all_loc_data.get('en', {}))
+        except Exception as e:
+            if hasattr(self, 'logger'):
+                self.logger.error(f"Failed to load localization: {e}")
+            self.labels = {}
+
+    def _aggregate_usage(self,
+                         total_usage: Dict[str, Any],
+                         new_usage: Union[Dict, BaseModel, None]):
+        """
+        聚合用量数据 (支持 Pydantic 对象)。
+        """
+        if not new_usage:
+            return
+
+        # 1. 归一化
+        if isinstance(new_usage, BaseModel):
+            data = new_usage.model_dump()
+        else:
+            data = new_usage
+
+        # 2. 累加数值
+        for key, value in data.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if "timestamp" not in key and "time" not in key:
+                    total_usage[key] = total_usage.get(key, 0) + value
+
+        # 3. 更新时间窗口
+        current_time = data.get('timestamp') or data.get('end_time_utc')
+
+        if current_time:
+            if 'session_start_time' not in total_usage:
+                total_usage['session_start_time'] = current_time
+            if current_time < total_usage['session_start_time']:
+                total_usage['session_start_time'] = current_time
+
+            if 'session_end_time' not in total_usage:
+                total_usage['session_end_time'] = current_time
+            if current_time > total_usage['session_end_time']:
+                total_usage['session_end_time'] = current_time

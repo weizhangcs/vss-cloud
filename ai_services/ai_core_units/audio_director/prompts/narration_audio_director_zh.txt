@@ -15,17 +15,3 @@
 2.  **`narration_for_audio` (中文+标记)**: 在原文本基础上，**自然地**插入语音标记。
     * 仅支持以下标记: `[sigh]` (叹气), `[laugh]` (笑声), `[short pause]` (短停顿), `[medium pause]` (中停顿)。
     * **严禁修改原文本的文字内容**，只能插入标记。
-
-## 输出格式
-必须返回一个 JSON 对象，包含一个 `enriched_script` 数组。数组顺序必须与输入严格一致。
-
-```json
-{{
-  "enriched_script": [
-    {{
-      "index": 0,
-      "tts_instruct": "Speak in a cheerful and energetic tone.",
-      "narration_for_audio": "哈喽啊！[laugh] 兄弟姐妹们！"
-    }}
-  ]
-}}

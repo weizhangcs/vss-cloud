@@ -8,8 +8,8 @@ from task_manager.handlers.registry import HandlerRegistry
 # 引入核心组件
 from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
 from ai_services.ai_platform.llm.cost_calculator import CostCalculator
-from ai_services.biz_services.subtitle_context.service import SubtitleContextService
-from ai_services.biz_services.subtitle_context.schemas import SubtitleContextPayload
+from ai_services.biz_services.character_pre_annotator.service import CharacterPreAnnotatorService
+from ai_services.biz_services.character_pre_annotator.schemas import CharacterPreAnnotatorPayload
 
 from core.exceptions import BizException
 from core.error_codes import ErrorCode
@@ -39,7 +39,7 @@ class SubtitleContextHandler(BaseTaskHandler):
         )
 
         # 3. 初始化业务服务
-        service = SubtitleContextService(
+        service = CharacterPreAnnotatorService(
             logger=self.logger,
             gemini_processor=gemini_processor,
             cost_calculator=cost_calculator
@@ -56,7 +56,7 @@ class SubtitleContextHandler(BaseTaskHandler):
         try:
             result_data = service.execute(payload_data)
         except Exception as e:
-            self.logger.error(f"SubtitleContextService execution failed: {e}", exc_info=True)
+            self.logger.error(f"CharacterPreAnnotatorService execution failed: {e}", exc_info=True)
             raise e
 
         # 6. 结果落地
