@@ -20,38 +20,8 @@ from tests.lib.bootstrap import bootstrap_local_env_and_logger
 
 
 def create_mock_srt(work_dir: Path) -> Path:
-    """创建一个包含混淆信息的 SRT 文件"""
-    srt_content = """1
-00:00:01,000 --> 00:00:03,000
-喂，你好，请问是海晏集团吗？
 
-2
-00:00:03,500 --> 00:00:05,000
-是的，我是楚昊轩。
-
-3
-00:00:05,500 --> 00:00:07,000
-楚总您好，我是新来的秘书小王。
-
-4
-00:00:07,500 --> 00:00:09,000
-小王啊，那个车小小来了没有？
-
-5
-00:00:09,500 --> 00:00:11,000
-车小姐已经在会议室等您了。
-
-6
-00:00:11,500 --> 00:00:13,000
-好的，我马上过去。
-(低声自语) 这个车星星，到底想干什么。
-
-7
-00:00:15,000 --> 00:00:17,000
-各位观众晚上好，欢迎收看晚间新闻。
-"""
     srt_path = work_dir / "mock_dialogue.srt"
-    srt_path.write_text(srt_content, encoding='utf-8')
     return srt_path
 
 
@@ -98,7 +68,7 @@ def run_test():
     # 同时测试 "车星星" -> "车小小" 的归一化能力
     payload = {
         "subtitle_path": str(srt_path),
-        "known_characters": ["楚昊轩", "车小小"],
+        "known_characters": ["楚昊轩", "车小小","宋安娜"],
         "video_title": "总裁的契约女友",
         "lang": "zh",
         "model_name": "gemini-2.5-flash"

@@ -1,160 +1,171 @@
-# tests/ai_services/scene_pre_annotator/test_scene_pre_annotator.py
-
 import sys
 import json
 import shutil
 import subprocess
+import time
+import logging
+import os
+from datetime import datetime
 from pathlib import Path
 
-# 环境引导
-current_file = Path(__file__).resolve()
-project_root = current_file.parents[3]
-sys.path.append(str(project_root))
+# 引入解耦后的模块
+from tests.lib.vss_edge_simulator import EdgeSimulator
+from tests.lib.vss_uploader import VSSMediaUploader
+from tests.lib.video_tools import cut_scenes_from_video
 
 from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
 from ai_services.ai_platform.llm.cost_calculator import CostCalculator
 from ai_services.biz_services.scene_pre_annotator.service import ScenePreAnnotatorService
 from tests.lib.bootstrap import bootstrap_local_env_and_logger
 
-# 引入之前的 PoC Slicer (假设文件在 tests/core_slicer_test.py)
-# 如果 import 失败，请确保 tests/__init__.py 存在
-try:
-    from tests.core_slicer_test import VSSVideoSlicer
-except ImportError:
-    print("❌ 无法导入 VSSVideoSlicer，请确保 tests/core_slicer_test.py 存在")
-    sys.exit(1)
+# ==========================================
+# 1. 环境引导 (Bootstrap)
+# ==========================================
+current_file = Path(__file__).resolve()
+project_root = current_file.parents[3]
+sys.path.append(str(project_root))
 
+# Django 配置引导 (为了获取 GCS Bucket 等配置)
+from django.conf import settings
 
-def extract_frames_for_slice(video_path: Path, start: float, end: float, slice_id: int, output_dir: Path):
-    """[模拟 Edge 端] 提取 Start/Mid/End 三帧"""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    frames = []
+if not settings.configured:
+    # 请替换为您实际的 Bucket Name，或确保环境变量中有 GCS_BUCKET_NAME
+    bucket_name = os.getenv("GCS_BUCKET_NAME", "vss_cloud_localhost_dev")
+    settings.configure(
+        GCS_BUCKET_NAME=bucket_name,
+        LOGGING_CONFIG=None  # 避免冲突
+    )
 
-    duration = end - start
-    mid = start + (duration / 2)
+if not os.getenv("GOOGLE_CLOUD_PROJECT"):
+    # 强制设置一个，Vertex SDK 需要它
+    os.environ["GOOGLE_CLOUD_PROJECT"] = "storygraph-465918"
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
 
-    # 定义采样点
-    # 注意：FFmpeg -ss 放在 -i 前面更快
-    points = [("start", start), ("mid", mid), ("end", end)]
-
-    ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
-
-    for label, timestamp in points:
-        filename = f"slice_{slice_id}_{label}.jpg"
-        out_path = output_dir / filename
-
-        if not out_path.exists():
-            cmd = [
-                ffmpeg_bin, "-y",
-                "-ss", str(timestamp),
-                "-i", str(video_path),
-                "-frames:v", "1",
-                "-q:v", "2",  # 质量控制
-                str(out_path)
-            ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        if out_path.exists():
-            frames.append({
-                "timestamp": timestamp,
-                "path": str(out_path.resolve()),  # 必须转为绝对路径
-                "position": label
-            })
-
-    return frames
-
-
+# ==========================================
+# 3. 主编排流程 (Orchestration)
+# ==========================================
 def run_test():
-    # 1. 配置输入 (请修改这里指向您的真实测试文件)
+    # --- A. 配置路径 ---
+    VIDEO_FILE = project_root / "shared_media/tmp/scene_pre_annotator/film/EP02.mp4"
+    ASS_FILE = project_root / "shared_media/tmp/scene_pre_annotator/film/EP02_ai_labeled.ass"
+    WORK_DIR = project_root / "shared_media/tmp/scene_pre_annotator/film"
+
+    # 中间产物 (Checkpoints)
+    STEP1_JSON = WORK_DIR / "step1_edge_output.json"  # 包含本地图片路径
+    STEP2_JSON = WORK_DIR / "step2_cloud_ready.json"  # 包含 gs:// 路径
+    FINAL_JSON = WORK_DIR / "step3_final_result.json"  # 最终结果
+
+    # 引导环境
+    settings_obj, logger = bootstrap_local_env_and_logger(project_root)
+
+    # 确保 WORK_DIR 存在
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("==================================================")
+    print("🎬 VSS Scene Pre-Annotator Pipeline (Decoupled)")
+    print("==================================================")
+
     # ==========================================
-    VIDEO_FILE = project_root / "shared_media/tmp/scene_pre_annotator/ep01.mp4"
-
-    SUBTITLE_FILE = project_root / "shared_media/tmp/scene_pre_annotator/ep01.srt"
+    # Stage 1: VSS Edge (Slice & Extract)
     # ==========================================
+    local_slices = []
 
-    settings, logger = bootstrap_local_env_and_logger(project_root)
+    if STEP1_JSON.exists():
+        print(f"\n✅ [Stage 1: Edge] Checkpoint found: {STEP1_JSON.name}")
+        with open(STEP1_JSON, 'r', encoding='utf-8') as f:
+            local_slices = json.load(f)
+        print(f"   Loaded {len(local_slices)} slices from local cache.")
+    else:
+        print(f"\n🚀 [Stage 1: Edge] Running Simulator...")
+        try:
+            edge = EdgeSimulator(VIDEO_FILE, ASS_FILE, WORK_DIR)
+            local_slices = edge.run()
 
-    if not VIDEO_FILE.exists() or not SUBTITLE_FILE.exists():
-        print(f"⚠️  测试文件不存在: \nVideo: {VIDEO_FILE}\nSub: {SUBTITLE_FILE}")
-        print("请在 shared_media/tmp/scene_pre_annotator 下放置测试文件后重试。")
-        return
+            # 保存 Checkpoint
+            with open(STEP1_JSON, 'w', encoding='utf-8') as f:
+                json.dump(local_slices, f, ensure_ascii=False, indent=2)
+            print(f"   Saved {len(local_slices)} slices to {STEP1_JSON.name}")
+        except Exception as e:
+            print(f"❌ Stage 1 Failed: {e}")
+            return
 
-    work_dir = project_root / "shared_media/tmp/scene_pre_annotator"
-    frames_dir = work_dir / "frames"
-    work_dir.mkdir(parents=True, exist_ok=True)
+    # ==========================================
+    # Stage 2: VSS Transfer (Upload to GCS)
+    # ==========================================
+    remote_slices = []
 
-    # 2. [Edge Phase 1] 运行切片器
-    print(">>> [Edge] Running Slicer...")
-    slicer = VSSVideoSlicer(str(VIDEO_FILE), str(SUBTITLE_FILE))
-    raw_result = slicer.process()
+    if STEP2_JSON.exists():
+        print(f"\n✅ [Stage 2: Transfer] Checkpoint found: {STEP2_JSON.name}")
+        with open(STEP2_JSON, 'r', encoding='utf-8') as f:
+            remote_slices = json.load(f)
+        print(f"   Loaded {len(remote_slices)} remote slices cache.")
+    else:
+        print(f"\n🚀 [Stage 2: Transfer] Uploading to GCS ({settings.GCS_BUCKET_NAME})...")
+        try:
+            uploader = VSSMediaUploader(bucket_name=settings.GCS_BUCKET_NAME)
+            remote_slices = uploader.upload_slice_assets(local_slices, VIDEO_FILE.stem)
 
-    # 3. [Edge Phase 2] 提取图片并组装 Payload
-    print(">>> [Edge] Extracting Frames & Building Payload...")
-    processed_slices = []
+            # 保存 Checkpoint
+            with open(STEP2_JSON, 'w', encoding='utf-8') as f:
+                json.dump(remote_slices, f, ensure_ascii=False, indent=2)
+            print(f"   Upload complete. Saved manifest to {STEP2_JSON.name}")
+        except Exception as e:
+            print(f"❌ Stage 2 Failed: {e}")
+            return
 
-    for item in raw_result['slices']:
-        # 复制基本信息
-        new_item = {
-            "slice_id": len(processed_slices) + 1,  # 生成 ID
-            "start_time": item['start_time'],
-            "end_time": item['end_time'],
-            "type": item['type'],
-            "text_content": item.get('text_content')
-        }
+    # ==========================================
+    # Stage 3: VSS Cloud (Inference)
+    # ==========================================
+    print(f"\n🚀 [Stage 3: Cloud] Executing AI Inference...")
 
-        # 视觉切片 -> 提取图片
-        if item['type'] == 'visual_segment':
-            frame_data = extract_frames_for_slice(
-                VIDEO_FILE, item['start_time'], item['end_time'], new_item['slice_id'], frames_dir
-            )
-            new_item['frames'] = frame_data
-
-        processed_slices.append(new_item)
-
+    # 构造 Payload
+    # 注意：这里我们传入的是 remote_slices (带 gs:// 链接)
     payload = {
         "video_title": VIDEO_FILE.stem,
-        "slices": processed_slices,
+        "slices": remote_slices,
+        "lang": "en",  # 或 "zh"
         "visual_model": "gemini-2.5-flash",
         "text_model": "gemini-2.5-flash",
-        "lang": "zh"
+        "temperature": 0.1,
+        # "injected_annotated_slices": ... # 如果要测试缓存注入，可在这里加载 FINAL_JSON
     }
 
-    # 4. [Cloud Phase] 初始化服务
-    print(">>> [Cloud] Init Service...")
-    processor = GeminiProcessor(settings.GOOGLE_API_KEY, logger, debug_mode=True)
-    calculator = CostCalculator(settings.GEMINI_PRICING, settings.USD_TO_RMB_EXCHANGE_RATE)
-    service = ScenePreAnnotatorService(logger, processor, calculator)
-
-    # 5. 执行推理
-    print(f">>> [Cloud] Executing Inference on {len(processed_slices)} slices...")
     try:
-        result = service.execute(payload)
+        processor = GeminiProcessor(settings_obj.GOOGLE_API_KEY, logger, debug_mode=True)
+        calculator = CostCalculator(settings_obj.GEMINI_PRICING, settings_obj.USD_TO_RMB_EXCHANGE_RATE)
+        service = ScenePreAnnotatorService(logger, processor, calculator)
 
-        print("\n" + "=" * 40)
-        print("✅ 测试成功! 结果摘要:")
-        print("=" * 40)
+        t_start = time.time()
+        result_dict = service.execute(payload)
+        duration = time.time() - t_start
+        print(f"   Inference finished in {duration:.2f}s")
 
-        annotated = result.get('annotated_slices', [])
-        for item in annotated:
-            print(f"\n[Slice {item['slice_id']}] {item['type']} ({item['start_time']}s - {item['end_time']}s)")
-
-            if item.get('visual_analysis'):
-                vis = item['visual_analysis']
-                print(f"  📷 Visual: {vis['subject']} | {vis['action']} | {vis['mood']}")
-                print(f"     Shot: {vis['shot_type']} | New Scene? {vis['is_new_scene']}")
-
-            if item.get('semantic_analysis'):
-                sem = item['semantic_analysis']
-                print(f"  📝 Text: {sem['summary']}")
-                print(f"     Func: {sem['narrative_function']} | New Scene? {sem['potential_scene_change']}")
-
-        usage = result.get("usage_report", {})
-        print(f"\n💰 Cost: ${usage.get('cost_usd', 0):.4f}")
+        # 保存最终结果
+        with open(FINAL_JSON, 'w', encoding='utf-8') as f:
+            json.dump(result_dict, f, ensure_ascii=False, indent=2)
+        print(f"   ✅ Final Result saved to {FINAL_JSON.name}")
 
     except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Stage 3 Failed: {e}")
+        # 如果是 Stage 3 失败，不应该影响 Step 1 和 Step 2 的缓存，下次可以直接重试 Stage 3
+        return
+
+    # ==========================================
+    # 4. 物理切分 (Post-Processing)
+    # ==========================================
+    if result_dict and result_dict.get('scenes'):
+        output_clips_dir = WORK_DIR / f"clips_v3_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # 注意：这里需要传入 result_dict['scenes'] 和 result_dict['annotated_slices']
+        # 这里的 annotated_slices 已经是包含了 visual_analysis 的完整数据
+        cut_scenes_from_video(
+            VIDEO_FILE,
+            result_dict['scenes'],
+            result_dict['annotated_slices'],
+            output_clips_dir
+        )
+    else:
+        print("⚠️ No scenes generated, skipping cut.")
 
 
 if __name__ == "__main__":
