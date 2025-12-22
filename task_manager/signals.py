@@ -19,6 +19,10 @@ QUEUE_ROUTING = {
     Task.TaskType.GENERATE_EDITING_SCRIPT: 'queue_gemini',
     Task.TaskType.SUBTITLE_CONTEXT: 'queue_gemini',
 
+    # [Step 1.5 New] Route new tasks to Gemini Queue
+    Task.TaskType.CHARACTER_PRE_ANNOTATOR: 'queue_gemini',
+    Task.TaskType.SCENE_PRE_ANNOTATOR: 'queue_gemini',
+
     # === B类: 音频/计算密集型 (中等并发) ===
     # 特点: 涉及 Aliyun CosyVoice (PAI-EAS) 或 Google TTS
     # 虽然 Google TTS 配额较高，但音频处理本身不仅耗 IO 还耗 CPU (编解码)

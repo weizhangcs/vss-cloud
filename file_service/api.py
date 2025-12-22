@@ -1,3 +1,5 @@
+# file_service/api.py
+
 import uuid
 import logging
 from pathlib import Path
@@ -13,11 +15,12 @@ from ninja.files import UploadedFile
 from core.exceptions import BizException
 from core.error_codes import ErrorCode
 from task_manager.models import Task
-
 from core.auth import EdgeAuth
 
-# 引入 Pydantic Schema
-from .schemas import FileUploadResponse
+# 引入 Schema
+from .schemas import FileUploadResponse, UploadTicketRequest, UploadTicketResponse
+# 引入 Step 1.1 创建的基础设施
+from .infrastructure.gcs_signer import GCSSignerService
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +63,8 @@ def upload_file(request, file: UploadedFile = File(...)):
         logger.info(f"File uploaded successfully: {relative_path}")
 
         return FileUploadResponse(
-            relative_path=str(relative_path)
+            relative_path=str(relative_path),
+            full_url=None  # 显式赋值，消除警告,但是这是预留功能
         )
 
     except Exception as e:
@@ -149,3 +153,56 @@ def download_generic_file(request, path: str):
         if isinstance(e, BizException): raise e
         logger.error(f"Generic download failed: {e}")
         raise BizException(ErrorCode.FILE_IO_ERROR, msg=f"Download failed: {e}")
+
+
+@router.post("/upload-ticket", response=UploadTicketResponse, summary="获取上传票据 (V3.7)")
+def get_upload_ticket(request, payload: UploadTicketRequest):
+    """
+    [Control Plane] 批量获取 GCS 预签名上传链接。
+    Edge 端使用此接口换取上传权限，直接通过 PUT 请求将大文件(图片/视频)上传到 GCS，
+    从而实现 VSS Cloud 的无状态化和无宽带压力。
+    """
+    # 1. 路径策略决策 (Path Strategy)
+    # 根据是否提供 media_id 决定存储层级
+    if payload.media_id:
+        # 场景/物理媒资相关: assets/{asset_id}/{media_id}/raw/
+        # 例如: assets/uuid-asset/uuid-media-ep01/raw/frame_001.jpg
+        prefix = f"assets/{payload.asset_id}/{payload.media_id}/raw"
+    else:
+        # 资产级/公共相关: assets/{asset_id}/common/
+        # 例如: assets/uuid-asset/common/character_cluster_01.jpg
+        prefix = f"assets/{payload.asset_id}/common"
+
+    # 2. 初始化签名服务
+    try:
+        # 依赖 Django settings 中的 GOOGLE_CLOUD_PROJECT
+        # 且假设服务器环境已有 ADC (Application Default Credentials) 或 Service Account
+        signer = GCSSignerService(project_id=settings.GOOGLE_CLOUD_PROJECT)
+    except Exception as e:
+        logger.error(f"Failed to init GCSSignerService: {e}")
+        raise BizException(ErrorCode.UNKNOWN_ERROR, msg="Signer service initialization failed.")
+
+    # 3. 生成链接 (Batch Signing)
+    try:
+        bucket_name = settings.GCS_DEFAULT_BUCKET
+        if not bucket_name:
+            raise BizException(ErrorCode.UNKNOWN_ERROR, msg="Server misconfiguration: GCS_DEFAULT_BUCKET not set.")
+
+        signed_urls = signer.generate_batch_upload_urls(
+            bucket_name=bucket_name,
+            file_names=payload.filenames,
+            prefix=prefix,
+            expiration_seconds=3600  # 1小时有效期，足够 Edge 上传
+        )
+    except Exception as e:
+        logger.error(f"GCS Signing failed: {e}", exc_info=True)
+        raise BizException(ErrorCode.THIRD_PARTY_API_ERROR, msg=f"GCS signing failed: {str(e)}")
+
+    # 4. 返回结果
+    # 注意：prefix 在 signer 中可能被加了尾部斜杠，这里我们自己构造标准化的 gs:// 路径
+    standard_prefix = prefix.rstrip('/') + '/'
+
+    return UploadTicketResponse(
+        upload_base_path=f"gs://{bucket_name}/{standard_prefix}",
+        signed_urls=signed_urls
+    )

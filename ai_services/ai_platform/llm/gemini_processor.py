@@ -275,3 +275,30 @@ class GeminiProcessor:
             if 'self' in frame.f_locals:
                 return frame.f_locals['self'].__class__.__name__
         return "Unknown"
+
+    # [新增] 标准化用量提取方法
+    @staticmethod
+    def normalize_usage(response: Any) -> Dict[str, Any]:
+        """
+        [Static Helper] 从 Google GenAI SDK 响应对象中提取标准化的 Usage 字典。
+        严格对齐 ai_services.ai_platform.llm.schemas.UsageStats 结构。
+        """
+        usage_dict = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_tokens": 0,
+            "request_count": 1  # [Fix] 使用标准字段名 request_count
+        }
+
+        # 兼容 google-genai SDK 的 response 结构
+        meta = getattr(response, 'usage_metadata', None)
+        if meta:
+            # getattr(obj, name, default) 安全获取
+            usage_dict["prompt_tokens"] = getattr(meta, 'prompt_token_count', 0) or 0
+            usage_dict["completion_tokens"] = getattr(meta, 'candidates_token_count', 0) or 0
+            usage_dict["total_tokens"] = getattr(meta, 'total_token_count', 0) or 0
+            # [Fix] 补全缓存字段
+            usage_dict["cached_tokens"] = getattr(meta, 'cached_content_token_count', 0) or 0
+
+        return usage_dict

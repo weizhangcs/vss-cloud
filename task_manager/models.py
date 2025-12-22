@@ -24,6 +24,8 @@ class Task(TimeStampedModel):
         LOCALIZE_NARRATION = "LOCALIZE_NARRATION", _("Localize Narration")
         VISUAL_ANALYSIS = 'visual_analysis', _('Visual Analysis & Refinement')
         SUBTITLE_CONTEXT = 'subtitle_context', 'Subtitle Context Analysis'
+        CHARACTER_PRE_ANNOTATOR = 'character_pre_annotator', _('Character Pre-Annotator')
+        SCENE_PRE_ANNOTATOR = 'scene_pre_annotator', _('Scene Pre-Annotator')
 
     class TaskStatus(models.TextChoices):
         PENDING = "PENDING", _("Pending")

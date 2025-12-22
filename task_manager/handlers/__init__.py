@@ -11,3 +11,5 @@ from . import dubbing
 from . import localization
 from . import visual_analysis
 from . import subtitle_context
+from . import character_pre_annotator
+from . import scene_pre_annotator

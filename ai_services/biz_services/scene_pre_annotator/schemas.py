@@ -2,7 +2,9 @@
 
 from enum import Enum
 from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, Field
+from pathlib import Path
+from pydantic import BaseModel, Field, field_validator, model_validator
+
 
 # ==============================================================================
 # Enums
@@ -16,14 +18,6 @@ class ShotType(str, Enum):
     LONG_SHOT = "long_shot"
     ESTABLISHING_SHOT = "establishing_shot"
 
-class VisualMood(str, Enum):
-    """视觉的情绪氛围"""
-    NEUTRAL = "neutral"
-    WARM = "warm"
-    COLD = "cold"
-    DARK_TENSE = "dark_tense"
-    BRIGHT_CHEERFUL = "bright_cheerful"
-
 # ==============================================================================
 # Stage 1: Batch Visual Inference
 # ==============================================================================
@@ -34,7 +28,22 @@ class VisualAnalysisOutput(BaseModel):
     shot_type: ShotType = Field(..., description="The camera shot size.")
     subject: str = Field(..., description="Main subject (Person/Object). Keep brief.")
     action: str = Field(..., description="Physical action occurring. Keep brief.")
-    mood: VisualMood = Field(..., description="Lighting and atmospheric mood.")
+
+    # [New] 动态标签列表 (V4.1)
+    visual_mood_tags: List[str] = Field(
+        default_factory=list,
+        description="A list of 1-3 keywords describing the lighting and atmosphere (e.g., ['warm', 'tense'])."
+    )
+
+    @field_validator('visual_mood_tags', mode='before')
+    def pre_clean_tags(cls, v):
+        """基础清洗，防止 None 或非 List 类型"""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            # 容错：如果 LLM 偶尔返回了逗号分隔字符串
+            return [t.strip() for t in v.split(',') if t.strip()]
+        return v
 
 class BatchVisualOutput(BaseModel):
     """批量推理的返回容器"""
@@ -46,8 +55,37 @@ class BatchVisualOutput(BaseModel):
 
 class FrameRef(BaseModel):
     timestamp: float
-    path: str
+    path: str = Field(..., description="图片路径 (支持 gs:// 云端路径或本地绝对路径)")
     position: Literal["start", "mid", "end"]
+
+    @field_validator('path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        """
+        [安全校验]
+        1. 允许 gs:// 开头的云端路径。
+        2. 允许 相对路径 (e.g. 'tmp/frames/1.jpg')。
+        3. 【禁止】 绝对路径 (防止路径遍历攻击和环境泄露)。
+        """
+        v = v.strip()
+
+        # Case A: GCS Path
+        if v.startswith("gs://"):
+            return v
+
+        # Case B: Local Path
+        path_obj = Path(v)
+
+        # 严禁绝对路径 (Windows 或 Linux 格式)
+        if path_obj.is_absolute():
+            raise ValueError(
+                f"Security Error: Absolute paths are not allowed. Please use a relative path. Received: {v}")
+
+        # 防止向上的路径遍历 (e.g., ../../etc/passwd)
+        if ".." in v:
+            raise ValueError("Security Error: Path traversal ('..') is not allowed.")
+
+        return v
 
 class SliceInput(BaseModel):
     slice_id: int
@@ -69,13 +107,24 @@ class AnnotatedSliceResult(BaseModel):
 
 class ScenePreAnnotatorPayload(BaseModel):
     video_title: str
-    slices: List[SliceInput]
     injected_annotated_slices: Optional[List[AnnotatedSliceResult]] = None
     visual_model: str = "gemini-2.5-flash"
     text_model: str = "gemini-2.5-flash"
     lang: str = "zh"
     temperature: float = 0.1
     debug: bool = False
+
+    # 方案 A: 小数据直接传 (保持兼容性)
+    slices: Optional[List[SliceInput]] = None
+
+    # 方案 B: 大数据传文件路径 (推荐)
+    slices_file_path: Optional[str] = Field(None, description="Path to raw_slices.json (gs:// or local relative)")
+
+    @model_validator(mode='after')
+    def check_slices_source(self):
+        if not self.slices and not self.slices_file_path:
+            raise ValueError("Must provide either 'slices' (list) or 'slices_file_path'.")
+        return self
 
 # ==============================================================================
 # Stage 2: Segmentation

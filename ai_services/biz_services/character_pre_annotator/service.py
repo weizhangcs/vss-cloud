@@ -5,9 +5,10 @@ import math
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 
 from django.conf import settings
+from google.cloud import storage  # [New Requirement]
 
 from ai_services.ai_platform.llm.mixins import AIServiceMixin
 from ai_services.ai_platform.llm.gemini_processor import GeminiProcessor
@@ -35,8 +36,6 @@ class SubtitleLine:
 
 class CharacterPreAnnotatorService(AIServiceMixin):
     SERVICE_NAME = "character_pre_annotator"
-
-    # [Standardized Config] 定义默认值
     DEFAULT_BATCH_SIZE = 150
     DEFAULT_TEMPERATURE = 0.1
 
@@ -50,7 +49,7 @@ class CharacterPreAnnotatorService(AIServiceMixin):
         self.prompts_dir = Path(__file__).parent / "prompts"
 
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        self.logger.info("🚀 Starting Character Pre-Annotation (Batch Mode)...")
+        self.logger.info("🚀 Starting Character Pre-Annotation (Hybrid Cloud Mode)...")
 
         # 1. 校验输入
         try:
@@ -58,19 +57,17 @@ class CharacterPreAnnotatorService(AIServiceMixin):
         except Exception as e:
             raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, f"Schema Error: {e}")
 
-        # 2. 解析 SRT
-        subtitle_full_path = self._resolve_path(task_input.subtitle_path)
-        if not subtitle_full_path.exists():
-            raise BizException(ErrorCode.FILE_IO_ERROR, f"File not found: {subtitle_full_path}")
+        # 2. 读取 SRT 内容 (支持 本地/GCS)
+        raw_srt_content = self._read_subtitle_content(task_input.subtitle_path)
 
-        raw_srt_content = subtitle_full_path.read_text(encoding='utf-8-sig')
         all_lines = self._parse_srt(raw_srt_content)
         total_lines = len(all_lines)
 
-        #获取配置(优先kwargs，兜底类默认值)
-        batch_size = payload.get('batch_size', self.DEFAULT_BATCH_SIZE)  # payload中获取或者kwargs
-        temperature = payload.get('temperature', self.DEFAULT_TEMPERATURE)
-        self.logger.info(f"Parsed {total_lines} lines. Strategy: Batch Processing (Size={batch_size})")
+        batch_size = task_input.batch_size
+        temperature = task_input.temperature
+
+        self.logger.info(
+            f"Parsed {total_lines} lines from {task_input.subtitle_path}. Strategy: Batch Processing (Size={batch_size})")
 
         # 3. 准备上下文
         chars_str = ", ".join(task_input.known_characters) if task_input.known_characters else "None"
@@ -164,6 +161,7 @@ class CharacterPreAnnotatorService(AIServiceMixin):
         # =========================================================
         # Stage 3: Post Processing
         # =========================================================
+        # [Note] ASS 生成逻辑暂时仅支持本地写出，如果是 GCS 路径，这里生成在 TMP 目录
         output_ass_path = self._generate_ass_file(task_input.subtitle_path, final_results)
         metrics_report = self._calculate_metrics(final_results)
 
@@ -173,7 +171,7 @@ class CharacterPreAnnotatorService(AIServiceMixin):
         result = CharacterPreAnnotatorResult(
             input_file=task_input.subtitle_path,
             optimized_subtitles=final_results,
-            output_ass_path=str(output_ass_path),
+            output_ass_path=str(output_ass_path) if output_ass_path else None,
             character_roster=metrics_report.get("character_roster", []),
             stats={
                 "total_lines": total_lines,
@@ -186,75 +184,51 @@ class CharacterPreAnnotatorService(AIServiceMixin):
 
         return result.model_dump()
 
-    def _normalize_speakers(self, raw_names: List[str], model: str, lang: str, usage_acc: Dict, temperature: float) -> Dict[str, str]:
-        """使用 AI 进行名字归一化"""
-        names_str = json.dumps(raw_names, indent=2, ensure_ascii=False)
-
-        prompt = self._build_prompt(
-            prompts_dir=self.prompts_dir,
-            prompt_name="speaker_normalization",
-            lang=lang,
-            name_list=names_str
-        )
-
-        try:
-            response_obj, usage = self.gemini_processor.generate_content(
-                model_name=model,
-                prompt=prompt,
-                response_schema=SpeakerNormalizationResponse,
-                temperature=temperature
-            )
-            self._aggregate_usage(usage_acc, usage)
-
-            # [Fix Issue 1] Convert List[Item] to Dict
-            return {item.original_name: item.normalized_name for item in response_obj.normalization_items}
-
-        except Exception as e:
-            self.logger.error(f"Normalization failed: {e}")
-            return {}
-
     # --- 辅助方法 ---
 
-    def _resolve_path(self, path_str: str) -> Path:
-        p = Path(path_str)
-        if p.is_absolute(): return p
-        return settings.SHARED_ROOT / p
+    def _read_subtitle_content(self, path_str: str) -> str:
+        """
+        [Core Upgrade] 混合路径读取适配器
+        """
+        if path_str.startswith("gs://"):
+            # GCS 路径读取
+            try:
+                # gs://bucket_name/path/to/file
+                parts = path_str[5:].split("/", 1)
+                bucket_name = parts[0]
+                blob_name = parts[1]
 
-    def _parse_srt(self, content: str) -> List[SubtitleLine]:
-        content = content.replace('\r\n', '\n').replace('\r', '\n')
-        blocks = content.strip().split('\n\n')
-        parsed_lines = []
-        for block in blocks:
-            lines = block.strip().split('\n')
-            if len(lines) >= 3:
-                try:
-                    idx = int(lines[0].strip())
-                    start, end = lines[1].split(' --> ')
-                    text = " ".join(lines[2:]).strip()
-                    parsed_lines.append(SubtitleLine(idx, start.strip(), end.strip(), text))
-                except:
-                    pass
-        return parsed_lines
+                client = storage.Client(project=settings.GOOGLE_CLOUD_PROJECT)
+                bucket = client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
 
-    def _srt_time_to_seconds(self, time_str: str) -> float:
-        if not time_str: return 0.0
-        try:
-            time_str = time_str.replace(',', '.')
-            h, m, s = time_str.split(':')
-            return float(h) * 3600 + float(m) * 60 + float(s)
-        except:
-            return 0.0
+                # 下载为字符串 (Assuming UTF-8)
+                content = blob.download_as_text(encoding='utf-8')
+                return content
+            except Exception as e:
+                self.logger.error(f"Failed to read GCS file {path_str}: {e}")
+                raise BizException(ErrorCode.FILE_IO_ERROR, f"GCS Read Failed: {e}")
+        else:
+            # 本地绝对路径 (Regression Test Mode)
+            p = Path(path_str)
+            # 如果是相对路径，尝试 resolve 到 SHARED_ROOT
+            if not p.is_absolute():
+                p = settings.SHARED_ROOT / p
+
+            if not p.exists():
+                raise BizException(ErrorCode.FILE_IO_ERROR, f"Local file not found: {p}")
+
+            return p.read_text(encoding='utf-8-sig')
 
     def _generate_ass_file(self, original_path_str: str, items: List[OptimizedSubtitleItem]) -> Path:
-        """
-        [Fix Issue 3] 补全 ASS 生成逻辑
-        """
-        original_path = self._resolve_path(original_path_str)
-        output_filename = f"{original_path.stem}_ai_labeled.ass"
-        output_path = original_path.parent / output_filename
+        """生成 ASS 文件到临时目录 (不再试图写回 GCS 源目录)"""
+        # 使用文件名作为标识
+        orig_name = Path(original_path_str).name
+        output_filename = f"{Path(orig_name).stem}_ai_labeled.ass"
+        # 始终写入到 SHARED_TMP_ROOT
+        output_path = settings.SHARED_TMP_ROOT / output_filename
 
         def sec_to_ass_time(seconds: float) -> str:
-            """12.345 -> 0:00:12.34 (H:MM:SS.cc)"""
             total_sec = int(seconds)
             cs = int((seconds - total_sec) * 100)
             m, s = divmod(total_sec, 60)
@@ -293,6 +267,60 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return output_path.relative_to(settings.SHARED_ROOT)
         except:
             return output_path
+
+    def _normalize_speakers(self, raw_names: List[str], model: str, lang: str, usage_acc: Dict, temperature: float) -> Dict[str, str]:
+        """使用 AI 进行名字归一化"""
+        names_str = json.dumps(raw_names, indent=2, ensure_ascii=False)
+
+        prompt = self._build_prompt(
+            prompts_dir=self.prompts_dir,
+            prompt_name="speaker_normalization",
+            lang=lang,
+            name_list=names_str
+        )
+
+        try:
+            response_obj, usage = self.gemini_processor.generate_content(
+                model_name=model,
+                prompt=prompt,
+                response_schema=SpeakerNormalizationResponse,
+                temperature=temperature
+            )
+            self._aggregate_usage(usage_acc, usage)
+
+            # [Fix Issue 1] Convert List[Item] to Dict
+            return {item.original_name: item.normalized_name for item in response_obj.normalization_items}
+
+        except Exception as e:
+            self.logger.error(f"Normalization failed: {e}")
+            return {}
+
+    def _parse_srt(self, content: str) -> List[SubtitleLine]:
+        content = content.replace('\r\n', '\n').replace('\r', '\n')
+        blocks = content.strip().split('\n\n')
+        parsed_lines = []
+        for block in blocks:
+            lines = block.strip().split('\n')
+            if len(lines) >= 3:
+                try:
+                    idx = int(lines[0].strip())
+                    start, end = lines[1].split(' --> ')
+                    text = " ".join(lines[2:]).strip()
+                    parsed_lines.append(SubtitleLine(idx, start.strip(), end.strip(), text))
+                except:
+                    pass
+        return parsed_lines
+
+    def _srt_time_to_seconds(self, time_str: str) -> float:
+        if not time_str: return 0.0
+        try:
+            time_str = time_str.replace(',', '.')
+            h, m, s = time_str.split(':')
+            return float(h) * 3600 + float(m) * 60 + float(s)
+        except:
+            return 0.0
+
+
 
     def _calculate_metrics(self, items: List[OptimizedSubtitleItem]) -> Dict:
         """

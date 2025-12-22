@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     'task_manager',
     'file_service',
     'ai_services',
+    'configuration',
     # ---------------------------
 ]
 

@@ -1,7 +1,8 @@
 # ai_services/biz_services/character_pre_annotator/schemas.py
 
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pathlib import Path
+from pydantic import BaseModel, Field, field_validator
 
 
 # ==============================================================================
@@ -26,6 +27,39 @@ class CharacterPreAnnotatorPayload(BaseModel):
     # 模型配置
     model_name: str = "gemini-2.5-flash"  # 适合大批量处理
     lang: str = "zh"
+
+    # [新增] 批处理大小控制
+    batch_size: int = Field(default=150, ge=10, le=500, description="字幕批处理行数")
+    temperature: float = Field(default=0.1, ge=0.0, le=1.0)
+
+    @field_validator('subtitle_path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        """
+        [安全校验]
+        1. 允许 gs:// 开头的云端路径。
+        2. 允许 相对路径 (e.g. 'tmp/file.srt')。
+        3. 【禁止】 绝对路径 (防止路径遍历攻击和环境泄露)。
+        """
+        v = v.strip()
+
+        # Case A: GCS Path
+        if v.startswith("gs://"):
+            return v
+
+        # Case B: Local Path
+        path_obj = Path(v)
+
+        # 严禁绝对路径 (Windows 或 Linux 格式)
+        if path_obj.is_absolute():
+            raise ValueError(
+                f"Security Error: Absolute paths are not allowed. Please use a relative path (e.g., 'tmp/file.srt'). Received: {v}")
+
+        # 防止向上的路径遍历 (e.g., ../../etc/passwd)
+        if ".." in v:
+            raise ValueError("Security Error: Path traversal ('..') is not allowed.")
+
+        return v
 
 
 class CharacterMetric(BaseModel):

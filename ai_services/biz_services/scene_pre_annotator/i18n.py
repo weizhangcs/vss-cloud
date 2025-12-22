@@ -1,39 +1,38 @@
 # ai_services/biz_services/scene_pre_annotator/i18n.py
 
-from .schemas import ShotType, VisualMood
+# [Modify] 移除 VisualMood 的引入
+from .schemas import ShotType
 
 TRANSLATIONS = {
     "zh": {
-        # ... (保持原有的中文映射) ...
+        # ShotType 保留
         ShotType.EXTREME_CLOSE_UP: "极特写",
         ShotType.CLOSE_UP: "特写",
         ShotType.MEDIUM_SHOT: "中景",
         ShotType.LONG_SHOT: "全景",
         ShotType.ESTABLISHING_SHOT: "建立镜头(环境)",
-        VisualMood.NEUTRAL: "中性",
-        VisualMood.WARM: "温暖",
-        VisualMood.COLD: "冷峻",
-        VisualMood.DARK_TENSE: "阴暗/紧张",
-        VisualMood.BRIGHT_CHEERFUL: "明亮/愉快",
-        # NarrativeFunction (如果还有用到)
+
+        # [Deleted] VisualMood 相关映射已移除，因为现在由 TagManager + DB 动态管理
     },
     "en": {
-        # English Formatting
+        # ShotType 保留
         ShotType.EXTREME_CLOSE_UP: "Extreme Close Up",
         ShotType.CLOSE_UP: "Close Up",
         ShotType.MEDIUM_SHOT: "Medium Shot",
         ShotType.LONG_SHOT: "Long Shot",
         ShotType.ESTABLISHING_SHOT: "Establishing Shot",
-        VisualMood.NEUTRAL: "Neutral",
-        VisualMood.WARM: "Warm",
-        VisualMood.COLD: "Cold",
-        VisualMood.DARK_TENSE: "Dark/Tense",
-        VisualMood.BRIGHT_CHEERFUL: "Bright/Cheerful",
+
+        # [Deleted] VisualMood 相关映射已移除
     }
 }
 
+
 def get_localized_term(enum_val, lang: str) -> str:
-    # 如果没传 lang，默认回退到 'en' 只是为了安全，
-    # 但业务逻辑应该保证 lang 存在
+    """
+    仅用于 ShotType 等静态枚举的翻译。
+    动态标签 (visual_mood_tags) 请使用 TagManager.get_display_label (如果需要) 或直接使用清洗后的值。
+    """
+    # 如果没传 lang，默认回退到 'en'
     target = TRANSLATIONS.get(lang, TRANSLATIONS.get("en", {}))
-    return target.get(enum_val, enum_val.value)
+    # 如果找不到 key，返回 value 本身 (str)
+    return target.get(enum_val, getattr(enum_val, 'value', str(enum_val)))

@@ -11,7 +11,7 @@ Extract key visual metadata for each slice to build a structured "Scene Index".
 1. **Shot Type**: Determine the shot size (e.g., Extreme Close Up, Close Up, Medium Shot, Long Shot, Establishing Shot).
 2. **Subject**: Identify the main person(s) or object(s).
 3. **Action**: Briefly describe the physical action occurring.
-4. **Mood**: Describe the atmosphere (Lighting, Color, Emotion).
+4. **Visual_mood_tags**: Provide 1 to 3 keywords describing the lighting, atmosphere, and mood. Examples: "warm", "dark", "tense", "romantic", "bright".
 
 ## Output Requirement
 Output a JSON object containing a "results" list. Ensure the order matches the input slice IDs.
