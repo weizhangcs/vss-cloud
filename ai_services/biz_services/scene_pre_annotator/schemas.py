@@ -10,6 +10,22 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Enums
 # ==============================================================================
 
+class AssetType(str, Enum):
+    FEATURE_FILM = "feature_film"       # 电影 (长场景，慢节奏)
+    SERIES_EPISODE = "series_episode"   # 剧集 (叙事主导)
+    SHORT_CLIP = "short_clip"           # 短片/切片 (快节奏)
+    DOCUMENTARY = "documentary"         # 纪录片
+    RAW_FOOTAGE = "raw_footage"         # 素材毛片
+
+# [New Enum] 场景类型 (Scene Type) - 导演视角分类
+class SceneType(str, Enum):
+    DIALOGUE = "dialogue"           # 对话场 (正反打/多人)
+    ACTION = "action"               # 动作场 (追逐/打斗/移动)
+    MONTAGE = "montage"             # 蒙太奇 (时空压缩)
+    ESTABLISHING = "establishing"   # 建立场 (环境展示)
+    EMOTIONAL = "emotional"         # 情绪场 (特写/反应)
+    UNKNOWN = "unknown"
+
 class ShotType(str, Enum):
     """运镜的类别"""
     EXTREME_CLOSE_UP = "extreme_close_up"
@@ -105,9 +121,17 @@ class AnnotatedSliceResult(BaseModel):
     text_content: Optional[str] = None # 原始字幕透传
     visual_analysis: Optional[VisualAnalysisOutput] = None # 视觉推理结果
 
+# [Refactored] Payload - 增加元数据
 class ScenePreAnnotatorPayload(BaseModel):
     video_title: str
+
+    # [New Metadata]
+    asset_type: AssetType = Field(default=AssetType.SHORT_CLIP, description="Type of the media asset.")
+    content_genre: str = Field(default="general", description="Content genre (e.g., 'sci-fi', 'romance').")
+
+    # 兼容 V3.8 的输入字段
     injected_annotated_slices: Optional[List[AnnotatedSliceResult]] = None
+
     visual_model: str = "gemini-2.5-flash"
     text_model: str = "gemini-2.5-flash"
     lang: str = "zh"
@@ -126,17 +150,44 @@ class ScenePreAnnotatorPayload(BaseModel):
             raise ValueError("Must provide either 'slices' (list) or 'slices_file_path'.")
         return self
 
+    # 结果容器
+    class Config:
+        use_enum_values = True
+
 # ==============================================================================
 # Stage 2: Segmentation
 # ==============================================================================
 
+# [Refactored] 场景定义 - V4.2 核心升级
 class SceneDefinition(BaseModel):
-    index: int
+    index: int = Field(..., description="Global scene index.")
     start_slice_id: int
     end_slice_id: int
-    reason: str = Field(..., description="Reason for segmentation (e.g. 'Flashback detected', 'New topic').")
-    summary: str = Field(..., description="Plot summary of the scene.")
-    visual_style: str = Field(..., description="Summary of visual style.")
+
+    # [Upgrade 1] 地点与环境
+    primary_location: str = Field(..., description="Main location. Use 'Unknown' if ambiguous.")
+
+    # [Upgrade 2] 核心类型与逻辑
+    scene_type: SceneType = Field(..., description="The functional type of this scene.")
+    camera_logic: str = Field(...,
+                              description="Editing/Camera logic summary (e.g., 'Fast cuts', 'Long take', 'Static', 'Handheld').")
+
+    # [Restored] 物理层：核心事件
+    narrative_action: str = Field(..., description="Core event or physical action occurring in this scene.")
+
+    # [Restored] 心理层：角色张力 (回归设计)
+    character_dynamics: Optional[str] = Field(None,
+                                              description="Relationship status or tension between characters (e.g., 'Hostile', 'Flirtatious'). Return null if no characters.")
+
+    # [Upgrade 4] 视觉氛围 (与 Slice 对齐, Stage 2 需归纳出主导 Tags)
+    visual_mood_tags: List[str] = Field(default_factory=list,
+                                        description="Dominant visual mood tags for the whole scene.")
+
+    def limit_tags(cls, v):
+        return v[:5]  # 简单粗暴，但在展示层最有效
+
+    # 溯源理由
+    reason: str = Field(..., description="Why were these slices grouped together?")
 
 class SceneSegmentationResponse(BaseModel):
     scenes: List[SceneDefinition]

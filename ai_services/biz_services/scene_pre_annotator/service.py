@@ -36,8 +36,8 @@ class ScenePreAnnotatorService(AIServiceMixin):
     SERVICE_NAME = "scene_pre_annotator"
 
     MAX_WORKERS = 4
-    VISUAL_BATCH_SIZE = 15
-    SEMANTIC_BATCH_SIZE = 500
+    VISUAL_BATCH_SIZE = 20
+    SEMANTIC_BATCH_SIZE = 250
 
     # 文件持久化配置
     RESULT_CACHE_FILE = "visual_inference_result_checkpoint.json"
@@ -291,6 +291,7 @@ class ScenePreAnnotatorService(AIServiceMixin):
 
             slice_log_lines = []
             for s in chunk_slices:
+                # ... (Slice Log 拼接逻辑保持不变) ...
                 time_str = f"({s.start_time:.1f}s-{s.end_time:.1f}s)"
                 text_content = s.text_content.replace('\n', ' ').strip() if s.text_content else ""
                 text_part = f"📖[SUB]: {text_content}" if text_content else "🔇[NO_TEXT]"
@@ -299,8 +300,6 @@ class ScenePreAnnotatorService(AIServiceMixin):
                 if s.visual_analysis:
                     v = s.visual_analysis
                     shot_str = get_localized_term(v.shot_type, task_input.lang)
-
-                    # [Logic Update] 适配 Tags 列表显示 (替换原有的 mood_str)
                     tags_str = ", ".join(v.visual_mood_tags) if v.visual_mood_tags else "neutral"
                     vis_part = f"📷[VIS]: {shot_str} | {v.subject} | {v.action} | Tags:[{tags_str}]"
 
@@ -309,10 +308,15 @@ class ScenePreAnnotatorService(AIServiceMixin):
 
             full_log_text = "\n".join(slice_log_lines)
 
+            # [CRITICAL FIX] 必须注入 Prompt 所需的新变量
             prompt = self._build_prompt(
                 prompts_dir=self.prompts_dir,
                 prompt_name="scene_segmentation",
                 lang=task_input.lang,
+                # --- 新增参数开始 ---
+                asset_type=task_input.asset_type,
+                content_genre=task_input.content_genre,
+                # --- 新增参数结束 ---
                 slice_log=full_log_text
             )
 
@@ -320,6 +324,7 @@ class ScenePreAnnotatorService(AIServiceMixin):
                 seg_resp, seg_usage = self.gemini_processor.generate_content(
                     model_name=task_input.text_model,
                     prompt=prompt,
+                    # 这里引用的 SceneSegmentationResponse 会自动使用新的 Schema (Location/SceneType等)
                     response_schema=SceneSegmentationResponse,
                     temperature=0.1
                 )

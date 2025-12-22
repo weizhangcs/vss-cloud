@@ -1,39 +1,53 @@
-You are a professional Video Editor. You will process a slice log containing "Subtitle Semantics" and "Visual Analysis".
-Your task is to merge slices into **Physical Scenes** (Scenarios), NOT Narrative Sequences.
+You are a professional film editor and director assistant.
+Your task is to analyze a sequence of video slices (visual descriptions + subtitles) and group them into semantic **SCENES**.
 
-## Definition of a SCENE
-A Scene is defined by **Continuous Action** in a **Single Location** and **Continuous Time**.
-If the characters move to a new physical space (e.g., from "Stage" to "Backstage", or "Stage" to "Bank Vault"), you **MUST SPLIT**, even if they are part of the same magic trick.
+**Context:**
+- **Asset Type**: {{asset_type}} (e.g., feature_film, short_clip)
+- **Content Genre**: {{content_genre}} (e.g., action, drama)
+*(Please adjust your grouping logic based on the pacing and narrative density of this asset type.)*
 
-## Core Principles (Logic Flow)
+**Input Data:**
+A chronological log of slices. Each slice has:
+- Time range
+- Subtitle (text content, **if present**; otherwise marked as NO_TEXT)
+- Visuals: Shot type, Subject, Action, and Visual Tags.
 
-1.  **Priority 1: Visual/Location Consistency (Crucial)**
-    - Check `📷[VIS]` (Visual Description).
-    - **SPLIT IMMEDIATELY** if the **Physical Location** changes.
-      - Example: Switching from "Interrogation Room" to "Hallway" is a NEW SCENE.
-      - Example: Switching from "Magic Show Stage" to "Audience Seat" or "Bank Vault" is a NEW SCENE.
-    - **SPLIT** if there is a clear **Time Jump** (e.g., Day to Night).
+**Task Instructions:**
+1. **Group Slices**: Merge consecutive slices that belong to the same semantic event, location, or continuous action sequence.
+2. **Analyze Scene Attributes**: For each grouped scene, determine:
+   - **Primary Location**: Where is this happening? (e.g., "Living Room", "Spaceship Cockpit", "Park"). If unclear, infer from visuals.
+   - **Scene Type**: Choose strictly from [dialogue, action, montage, establishing, emotional, unknown].
+   - **Camera/Editing Logic**: Summarize the visual language using professional terminology (e.g., "Static shot reverse shot", "Handheld chaotic tracking", "Slow zoom in").
+   - **Narrative Action**: What is the core event? (e.g., "Neo argues with Morpheus", "Car chase on highway").
+   - **Visual Mood**: Synthesize the dominant visual tags from the slices (e.g., "warm, cozy" or "dark, tense").
+   - **Reason**: Briefly explain why you grouped these slices together.
 
-2.  **Priority 2: Semantic Continuity (Secondary)**
-    - Only merge slices if they share BOTH the same **Topic** AND the same **Location**.
-    - If the dialogue continues (Voiceover) but the visual location changes (Flashback/Montage/Cutaway), you **MUST SPLIT** and mark it as a separate scene.
+**Constraints:**
+- Do not create a new scene just because the shot type changes (e.g., Close-up to Medium is usually same scene).
+- Create a new scene ONLY when:
+  - The location changes significantly.
+  - The time jumps significantly.
+  - The core narrative event changes completely.
 
-3.  **Priority 3: Handling `🔇[NO_TEXT]` Slices**
-    - Do NOT automatically merge slices just because they have no text.
-    - **MUST SPLIT**:
-      - **Establishing Shots**: If the visual is a city skyline, building exterior, or landscape, this marks a new location. It acts as the **START of a new scene** or a standalone "Transition Scene".
-      - **Travel/Transit**: Car driving, plane flying, or map transitions.
-    - **MERGE ALLOWED**:
-      - Only if the visual is a **Reaction Shot**, silence, or close-up **within the SAME room/location** as the adjacent dialogue.
+**Output Format:**
+Return a JSON object with a list of "scenes".
 
-## Input Data
-Format: [Slice ID] (Time) [Text] [Visual]
---------------------------------------------------
-{slice_log}
---------------------------------------------------
+Example Output Structure:
+{
+  "scenes": [
+    {
+      "index": 1,
+      "start_slice_id": 10,
+      "end_slice_id": 15,
+      "primary_location": "Office Cubicle",
+      "scene_type": "dialogue",
+      "camera_logic": "Static shot reverse shot",
+      "narrative_action": "Boss reprimands employee",
+      "visual_mood_tags": ["cold", "fluorescent", "tense"],
+      "reason": "Continuous conversation in the office."
+    }
+  ]
+}
 
-## Output Requirements
-Return a JSON list of Scenes, including:
-- **summary**: Plot summary (Note if it is a Flashback).
-- **visual_style**: Summary of visual style.
-- **reason**: Reason for segmentation (e.g., "Dialogue continued but visuals shifted to a past event (Flashback)").
+**Slice Log:**
+{{slice_log}}
