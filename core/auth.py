@@ -1,4 +1,4 @@
-# task_manager/auth.py
+# core/auth.py
 import uuid
 from django.http import HttpRequest
 from ninja.security import APIKeyHeader

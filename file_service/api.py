@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 # 如果需要鉴权: router = Router(auth=EdgeTokenAuth())
 router = Router(auth=EdgeAuth())
 
+MAX_UPLOAD_BATCH_SIZE = 1000  # [Safety] 强制限制
 
 @router.post("/upload", response=FileUploadResponse, summary="上传文件")
 def upload_file(request, file: UploadedFile = File(...)):
@@ -161,17 +162,34 @@ def get_upload_ticket(request, payload: UploadTicketRequest):
     [Control Plane] 批量获取 GCS 预签名上传链接。
     Edge 端使用此接口换取上传权限，直接通过 PUT 请求将大文件(图片/视频)上传到 GCS，
     从而实现 VSS Cloud 的无状态化和无宽带压力。
+    [V4.3 Fix]: 增加 Edge 租户隔离路径与批次限制。
     """
+
+    # 1. [Safety] 批次大小限制 (新增)
+    if len(payload.filenames) > MAX_UPLOAD_BATCH_SIZE:
+        raise BizException(
+            ErrorCode.PAYLOAD_VALIDATION_ERROR,
+            msg=f"Batch size limit exceeded. Max: {MAX_UPLOAD_BATCH_SIZE}"
+        )
+
+    # 2. [Security] 获取 Edge Instance ID (新增)
+    # EdgeAuth 鉴权成功后，request.auth 通常是 EdgeInstance 的模型对象
+    try:
+        edge_instance_id = str(request.auth.instance_id)
+    except AttributeError:
+        # 防御性编程：如果 Auth 实现变了，确保能报错
+        raise BizException(ErrorCode.PERMISSION_DENIED, msg="Could not identify Edge Instance.")
+
     # 1. 路径策略决策 (Path Strategy)
-    # 根据是否提供 media_id 决定存储层级
+
+    base_dir = "vss_asset"  # 统一根目录
+
     if payload.media_id:
-        # 场景/物理媒资相关: assets/{asset_id}/{media_id}/raw/
-        # 例如: assets/uuid-asset/uuid-media-ep01/raw/frame_001.jpg
-        prefix = f"assets/{payload.asset_id}/{payload.media_id}/raw"
+        # 物理媒资: vss_asset/{edge_instance_id}/{asset_id}/{media_id}/raw/
+        prefix = f"{base_dir}/{edge_instance_id}/{payload.asset_id}/{payload.media_id}/raw"
     else:
-        # 资产级/公共相关: assets/{asset_id}/common/
-        # 例如: assets/uuid-asset/common/character_cluster_01.jpg
-        prefix = f"assets/{payload.asset_id}/common"
+        # 公共资源: vss_asset/{edge_instance_id}/{asset_id}/common/
+        prefix = f"{base_dir}/{edge_instance_id}/{payload.asset_id}/common"
 
     # 2. 初始化签名服务
     try:

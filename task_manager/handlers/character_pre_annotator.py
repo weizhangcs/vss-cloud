@@ -19,11 +19,11 @@ from core.error_codes import ErrorCode
 @HandlerRegistry.register(Task.TaskType.CHARACTER_PRE_ANNOTATOR)
 class CharacterPreAnnotatorHandler(BaseTaskHandler):
     """
-    [Handler] 角色预处理任务 (V3.7)
+    [Handler] 角色预处理任务 (V4.0 JSON-Native)
     职责：
-    1. 接收客户端的相对路径。
-    2. 校验文件存在性 (Security Check)。
-    3. 调用业务 Service (透传相对路径)。
+    1. 环境初始化。
+    2. 执行业务逻辑并获取结构化结果。
+    3. 负责将增量结果 JSON 持久化到磁盘。
     """
 
     def handle(self, task: Task) -> dict:
@@ -51,62 +51,51 @@ class CharacterPreAnnotatorHandler(BaseTaskHandler):
             cost_calculator=cost_calculator
         )
 
-        # 2. Payload 校验与路径检查
+        # 2. 校验 Payload
         try:
-            # 2.1 基础格式校验 (Pydantic 拦截绝对路径)
+            # 此时 task.payload['subtitle_path'] 已经是符合契约的 JSON 路径
             payload_obj = CharacterPreAnnotatorPayload(**task.payload)
-
-            # 2.2 提取路径进行物理检查
-            # 我们直接使用原始 payload，不需要修改它
             service_payload = payload_obj.model_dump()
-            raw_path = payload_obj.subtitle_path
-
-            if raw_path.startswith("gs://"):
-                self.logger.info(f"Using GCS Path: {raw_path}")
-            else:
-                # [Core Fix] 仅做存在性检查，不修改 Payload 中的路径
-                # 将相对路径锚定到 SHARED_ROOT 进行检查
-                absolute_path = settings.SHARED_ROOT / raw_path
-
-                # 二次确认文件存在 (Fail Fast)
-                if not absolute_path.exists():
-                    raise BizException(ErrorCode.FILE_IO_ERROR, f"Input file not found on server: {absolute_path}")
-
-                self.logger.info(f"Local file verified at: {absolute_path}")
-                # 【关键】不要覆盖 service_payload['subtitle_path']
-                # 让 Service 接收相对路径，通过 Schema 校验，然后在 Service 内部自行 resolve
-
         except Exception as e:
-            if isinstance(e, BizException): raise e
             raise BizException(ErrorCode.PAYLOAD_VALIDATION_ERROR, f"Invalid Payload: {e}")
 
-        # 3. 执行业务逻辑
+        # 3. 执行业务逻辑 (获取 Dict 形式的 CharacterPreAnnotatorResult)
         try:
-            result_data = service.execute(service_payload)
+            raw_result = service.execute(service_payload)
         except Exception as e:
-            self.logger.error(f"CharacterPreAnnotator execution failed: {e}", exc_info=True)
+            self.logger.error(f"Service execution failed: {e}", exc_info=True)
             raise e
 
-        # 4. 结果落盘
-        output_filename = f"character_pre_result_{task.id}.json"
-        output_dir = settings.SHARED_TMP_ROOT / f"char_pre_{task.id}_workspace"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / output_filename
+        # 4. 物理落盘结果 JSON (增量数据)
+        # 从 payload 获取预定义的输出路径，或者自动生成
+        output_path_str = task.payload.get('absolute_output_path')
+        if not output_path_str:
+            output_filename = f"character_pre_result_{task.id}.json"
+            output_dir = settings.SHARED_TMP_ROOT / f"char_pre_{task.id}_workspace"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / output_filename
+        else:
+            output_path = Path(output_path_str)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # 写入物理文件
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(result_data, f, ensure_ascii=False, indent=2)
+            # 仅保存 optimized_subtitles 的增量部分
+            json.dump(raw_result.get("optimized_subtitles", []), f, ensure_ascii=False, indent=2)
 
-        # 计算相对路径返回给前端
+        # 5. 计算相对路径供 API 返回
         try:
             rel_output_path = output_path.relative_to(settings.SHARED_ROOT)
         except ValueError:
             rel_output_path = output_path.name
 
-        self.logger.info(f"✅ Task Finished. Result saved to: {rel_output_path}")
+        self.logger.info(f"✅ Task Finished. Result JSON saved to: {rel_output_path}")
 
+        # 6. 返回给 Task Manager 的 result 字段
+        # 注意：这里我们只把统计和路径放进数据库，避免把万行级的 optimized_subtitles 塞进数据库 JSONField
         return {
             "message": "Character pre-annotation completed.",
             "output_file_path": str(rel_output_path),
-            "stats": result_data.get("stats"),
-            "cost_usage": result_data.get("usage_report")
+            "stats": raw_result.get("stats"),
+            "cost_usage": raw_result.get("usage_report")
         }

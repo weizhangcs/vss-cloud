@@ -70,7 +70,7 @@ class BatchVisualOutput(BaseModel):
 # ==============================================================================
 
 class FrameRef(BaseModel):
-    timestamp: float
+    timestamp: float = 0.0
     path: str = Field(..., description="图片路径 (支持 gs:// 云端路径或本地绝对路径)")
     position: Literal["start", "mid", "end"]
 

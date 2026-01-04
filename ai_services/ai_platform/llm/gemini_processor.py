@@ -6,11 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, Union, List, Callable, Type, Tuple, TypeVar
 
+import httpcore
 from google import genai
 from google.genai import types
 from google.api_core import exceptions
 from google.genai.errors import ServerError
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from core.exceptions import RateLimitException
 from .schemas import UsageStats
@@ -30,7 +31,9 @@ class GeminiProcessor:
     _RETRYABLE_ERRORS = (
         exceptions.ServiceUnavailable, ServerError, exceptions.TooManyRequests,
         exceptions.InternalServerError, exceptions.GatewayTimeout,
-        exceptions.ResourceExhausted
+        exceptions.ResourceExhausted,
+        # [Fix] 捕获底层传输库(httpcore)的瞬时网络错误，如 "Server disconnected"
+        httpcore.RemoteProtocolError, httpcore.ConnectError, httpcore.ReadTimeout
     )
 
     def __init__(self,
@@ -219,8 +222,13 @@ class GeminiProcessor:
                 raw_text = getattr(response, 'text', '')
                 try:
                     return schema.model_validate_json(raw_text), usage
+                except ValidationError as e:
+                    # [Fix] 捕获 Schema 校验错误，提供详细的字段错误信息和更长的原文
+                    error_details = json.dumps(e.errors(), ensure_ascii=False)
+                    self._log_error(e, f"SchemaValidationFail({model_name})", datetime.now().strftime('%Y%m%d_%H%M%S_%f'))
+                    raise ValueError(f"SDK parsed JSON but schema validation failed.\nErrors: {error_details}\nRaw text preview: {raw_text[:1000]}...") from e
                 except Exception as e:
-                    raise ValueError(f"SDK failed to parse schema. Raw text: {raw_text[:100]}...") from e
+                    raise ValueError(f"SDK failed to parse schema. Raw text: {raw_text[:1000]}...") from e
         else:
             return getattr(response, 'text', ''), usage
 

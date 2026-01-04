@@ -18,6 +18,8 @@ QUEUE_ROUTING = {
     # B-Roll 选择主要使用 Gemini 进行语义分析
     Task.TaskType.GENERATE_EDITING_SCRIPT: 'queue_gemini',
     Task.TaskType.SUBTITLE_CONTEXT: 'queue_gemini',
+    Task.TaskType.VISUAL_ANALYZER: 'queue_gemini',
+    Task.TaskType.SUBTITLE_MERGER: 'queue_gemini',
 
     # [Step 1.5 New] Route new tasks to Gemini Queue
     Task.TaskType.CHARACTER_PRE_ANNOTATOR: 'queue_gemini',
